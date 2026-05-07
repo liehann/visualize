@@ -1,0 +1,30 @@
+{
+  "name": "visualize",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright report viewer + visual diff tool",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:ingest": "pnpm --filter @visualize/ingest dev",
+    "dev:viewer": "pnpm --filter @visualize/viewer dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset --force",
+    "db:studio": "prisma studio",
+    "compose:dev": "docker compose --profile dev up -d",
+    "compose:down": "docker compose --profile dev down",
+    "upload": "tsx scripts/upload-report.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  }
+}

@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    @apply bg-bg text-fg;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+
+  *::selection {
+    @apply bg-accent/30 text-fg;
+  }
+
+  /* Focus rings */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-bg;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar {
+    @apply h-2 w-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded bg-border-strong/60;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-strong;
+  }
+}
+
+@layer utilities {
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, hsl(220 13% 14% / 0.5) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(220 13% 14% / 0.5) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}

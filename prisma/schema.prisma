@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String     @id @default(cuid())
+  slug      String     @unique
+  name      String
+  createdAt DateTime   @default(now())
+  runs      Run[]
+  baselines Baseline[]
+}
+
+model Run {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // CI / VCS metadata — surfaced in the UI run list
+  commitSha  String?
+  branch     String?
+  prNumber   Int?
+  ciProvider String?
+  ciRunUrl   String?
+
+  status     RunStatus @default(running)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+
+  totalTests   Int @default(0)
+  passedTests  Int @default(0)
+  failedTests  Int @default(0)
+  flakyTests   Int @default(0)
+  skippedTests Int @default(0)
+
+  // On-disk location of the extracted bundle, relative to DATA_DIR
+  storagePath String
+
+  rawConfig Json?
+  metadata  Json?
+
+  tests     TestCase[]
+  createdAt DateTime   @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([commitSha])
+  @@index([prNumber])
+  @@index([branch])
+}
+
+enum RunStatus {
+  running
+  passed
+  failed
+  flaky
+  cancelled
+}
+
+model TestCase {
+  id             String       @id @default(cuid())
+  runId          String
+  run            Run          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  titlePath      String
+  title          String
+  file           String
+  line           Int?
+  column         Int?
+  projectName    String?
+  status         TestStatus
+  expectedStatus TestStatus?
+  durationMs     Int          @default(0)
+  results        TestResult[]
+
+  @@index([runId])
+  @@index([runId, status])
+}
+
+enum TestStatus {
+  passed
+  failed
+  timedOut
+  skipped
+  interrupted
+  expected
+  unexpected
+  flaky
+}
+
+model TestResult {
+  id           String       @id @default(cuid())
+  testCaseId   String
+  testCase     TestCase     @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  retry        Int          @default(0)
+  status       TestStatus
+  durationMs   Int          @default(0)
+  startedAt    DateTime?
+  workerIndex  Int?
+  errorMessage String?
+  errorStack   String?
+  errorSnippet String?
+  stdout       String?
+  stderr       String?
+  attachments  Attachment[]
+
+  @@unique([testCaseId, retry])
+  @@index([testCaseId])
+}
+
+model Attachment {
+  id           String         @id @default(cuid())
+  testResultId String
+  testResult   TestResult     @relation(fields: [testResultId], references: [id], onDelete: Cascade)
+  name         String
+  contentType  String?
+  storagePath  String
+  sizeBytes    Int?
+  kind         AttachmentKind
+  // For screenshot triplets (actual/expected/diff) attached to toHaveScreenshot()
+  snapshotKind SnapshotKind?
+  snapshotName String?
+
+  annotations  Annotation[]
+
+  @@index([testResultId])
+  @@index([snapshotName])
+}
+
+// Drawing annotations on top of a screenshot/diff. Stored as structured JSON
+// (rect, arrow, circle, text) rather than rasterized pixels, so Claude can
+// read/write them via MCP and the viewer can render them as SVG overlays.
+model Annotation {
+  id           String     @id @default(cuid())
+  attachmentId String
+  attachment   Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  // Shape geometry. Discriminated by `type`:
+  //   { type: "rect",   x, y, width, height, color?, strokeWidth? }
+  //   { type: "arrow",  x1, y1, x2, y2,      color?, strokeWidth? }
+  //   { type: "circle", x, y, radius,        color?, strokeWidth? }
+  //   { type: "text",   x, y, text,          color?, fontSize? }
+  shape     Json
+  label     String?
+  author    String?
+  source    AnnotationSource @default(human)
+  createdAt DateTime         @default(now())
+
+  @@index([attachmentId])
+}
+
+enum AnnotationSource {
+  human
+  claude
+  ci
+}
+
+enum AttachmentKind {
+  screenshot
+  video
+  trace
+  text
+  other
+}
+
+enum SnapshotKind {
+  actual
+  expected
+  diff
+}
+
+// Baselines (golden screenshots). One row per (project, name, browser, platform).
+// Updated either by direct CI upload (`POST /baselines`) or by approving a diff
+// in the viewer.
+model Baseline {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  browser     String?
+  platform    String?
+  storagePath String
+  sizeBytes   Int?
+  width       Int?
+  height      Int?
+  uploadedAt  DateTime @default(now())
+  commitSha   String?
+  branch      String?
+  // Audit: when a baseline came from approving a viewer diff, point at the
+  // attachment that was promoted + who approved.
+  approvedFromAttachmentId String?
+  approvedBy               String?
+  approvedAt               DateTime?
+
+  @@unique([projectId, name, browser, platform])
+  @@index([projectId])
+}

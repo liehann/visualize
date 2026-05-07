@@ -1,0 +1,88 @@
+# Production compose: brings up `ingest`, `viewer`, and `mcp` against an
+# external Postgres (set DATABASE_URL in `.env`).
+#
+# For local development, also start a local Postgres:
+#     docker compose --profile dev up -d
+#
+# In Coolify, deploy this stack and assign each service its own hostname:
+#   - ingest.<your-domain>  -> ingest  (CI uploads, Bearer-token auth)
+#   - visualize.<your-domain> -> viewer (web UI, Authentik OIDC)
+#   - mcp.<your-domain>     -> mcp     (Claude MCP server, Bearer-token auth)
+
+services:
+  ingest:
+    build:
+      context: .
+      dockerfile: apps/ingest/Dockerfile
+    image: visualize-ingest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      API_SECRET: ${API_SECRET}
+      DATA_DIR: /var/lib/visualize/data
+      PORT: 4000
+    volumes:
+      - visualize-data:/var/lib/visualize/data
+    ports:
+      - '4000:4000'
+
+  viewer:
+    build:
+      context: .
+      dockerfile: apps/viewer/Dockerfile
+    image: visualize-viewer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DATA_DIR: /var/lib/visualize/data
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${VIEWER_URL}
+      AUTH_TRUST_HOST: 'true'
+      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER}
+      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID}
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET}
+      PORT: 3000
+    volumes:
+      - visualize-data:/var/lib/visualize/data:ro
+    ports:
+      - '3000:3000'
+
+  mcp:
+    build:
+      context: .
+      dockerfile: apps/mcp/Dockerfile
+    image: visualize-mcp
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MCP_SECRET: ${MCP_SECRET}
+      DATA_DIR: /var/lib/visualize/data
+      PORT: 5000
+    volumes:
+      - visualize-data:/var/lib/visualize/data:ro
+    ports:
+      - '5000:5000'
+
+  # Local-dev only. Bring up with: docker compose --profile dev up -d
+  postgres:
+    image: postgres:16-alpine
+    profiles: ['dev']
+    container_name: visualize-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: visualize
+      POSTGRES_PASSWORD: ${POSTGRES_DEV_PASSWORD:-visualize}
+      POSTGRES_DB: visualize
+    ports:
+      - '5432:5432'
+    volumes:
+      - visualize-pg-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U visualize -d visualize']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  visualize-data:
+  visualize-pg-dev-data:

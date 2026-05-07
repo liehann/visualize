@@ -1,0 +1,32 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Local data store: Playwright report bundles + extracted assets
+data/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma
+prisma/migrations/dev.db*

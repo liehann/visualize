@@ -1,5 +1,4 @@
-import type { z } from 'zod';
-import type { ToolDefinition } from './types.js';
+import type { AnyToolDefinition } from './types.js';
 
 import { listProjectsTool } from './list_projects.js';
 import { listRunsTool } from './list_runs.js';
@@ -13,8 +12,7 @@ import { listRunsForCommitTool } from './list_runs_for_commit.js';
 import { listAnnotationsTool } from './list_annotations.js';
 import { addAnnotationTool } from './add_annotation.js';
 
-// `unknown` so we can keep the array heterogeneous in zod input types.
-export const tools: ToolDefinition<z.ZodTypeAny>[] = [
+export const tools: AnyToolDefinition[] = [
   listProjectsTool,
   listRunsTool,
   getRunTool,
@@ -26,6 +24,6 @@ export const tools: ToolDefinition<z.ZodTypeAny>[] = [
   listRunsForCommitTool,
   listAnnotationsTool,
   addAnnotationTool,
-];
+] as unknown as AnyToolDefinition[];
 
-export type { ToolDefinition } from './types.js';
+export type { ToolDefinition, AnyToolDefinition } from './types.js';

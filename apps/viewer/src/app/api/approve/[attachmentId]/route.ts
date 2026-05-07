@@ -47,7 +47,7 @@ export async function POST(
 
   const tc = attachment.testResult.testCase;
   const project = tc.run.project;
-  const browser = tc.projectName ?? null;
+  const browser = tc.projectName ?? 'any';
   const platform = process.platform; // baselines are platform-keyed in Playwright
   const safeName = attachment.snapshotName.replace(/[^a-zA-Z0-9._-]/g, '_');
 
@@ -79,8 +79,8 @@ export async function POST(
       platform,
       storagePath: targetRel,
       sizeBytes: stat.size,
-      commitSha: tc.run.commitSha,
-      branch: tc.run.branch,
+      commitSha: tc.run.commitSha ?? undefined,
+      branch: tc.run.branch ?? undefined,
       approvedFromAttachmentId: attachment.id,
       approvedBy: session.user.email ?? session.user.name ?? 'unknown',
       approvedAt: new Date(),
@@ -88,8 +88,8 @@ export async function POST(
     update: {
       storagePath: targetRel,
       sizeBytes: stat.size,
-      commitSha: tc.run.commitSha,
-      branch: tc.run.branch,
+      commitSha: tc.run.commitSha ?? undefined,
+      branch: tc.run.branch ?? undefined,
       approvedFromAttachmentId: attachment.id,
       approvedBy: session.user.email ?? session.user.name ?? 'unknown',
       approvedAt: new Date(),

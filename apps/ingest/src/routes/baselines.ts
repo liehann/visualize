@@ -143,13 +143,16 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
       // ignore — width/height stay undefined
     }
 
+    const browser = meta.browser ?? 'any';
+    const platform = meta.platform ?? 'any';
+
     const baseline = await prisma.baseline.upsert({
       where: {
         projectId_name_browser_platform: {
           projectId: project.id,
           name: meta.name,
-          browser: meta.browser ?? null,
-          platform: meta.platform ?? null,
+          browser,
+          platform,
         },
       },
       update: {
@@ -164,8 +167,8 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
       create: {
         projectId: project.id,
         name: meta.name,
-        browser: meta.browser,
-        platform: meta.platform,
+        browser,
+        platform,
         storagePath,
         sizeBytes,
         width,

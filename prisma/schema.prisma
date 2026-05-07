@@ -180,8 +180,11 @@ model Baseline {
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name        String
-  browser     String?
-  platform    String?
+  // Default to "any" rather than null so the compound unique key works
+  // cleanly. SQL UNIQUE treats NULL as not-equal-to-NULL, which would let
+  // duplicate baselines slip in.
+  browser     String   @default("any")
+  platform   String   @default("any")
   storagePath String
   sizeBytes   Int?
   width       Int?

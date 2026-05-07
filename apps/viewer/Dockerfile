@@ -22,14 +22,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Next.js standalone output bundles only what's needed.
+# Next.js standalone output bundles only what's needed (incl. Prisma engines
+# via outputFileTracingIncludes in next.config.mjs).
 COPY --from=builder /repo/apps/viewer/.next/standalone ./
 COPY --from=builder /repo/apps/viewer/.next/static ./apps/viewer/.next/static
 COPY --from=builder /repo/apps/viewer/public ./apps/viewer/public
-
-# The Prisma engines must be present at runtime for queries.
-COPY --from=builder /repo/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /repo/node_modules/@prisma/client ./node_modules/@prisma/client
 
 EXPOSE 3000
 CMD ["node", "apps/viewer/server.js"]

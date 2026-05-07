@@ -9,7 +9,7 @@ RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 WORKDIR /repo
 
 # Copy workspace manifests first for better layer caching
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* .npmrc ./
 COPY tsconfig.base.json ./
 COPY prisma ./prisma
 COPY packages/core/package.json ./packages/core/package.json

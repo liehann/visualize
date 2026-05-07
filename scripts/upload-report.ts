@@ -150,12 +150,19 @@ async function blobFromStream(stream: NodeJS.ReadableStream, size: number): Prom
   return new Blob(buffers, { type: 'application/octet-stream' });
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.report) {
-  await uploadReport(args, path.resolve(args.report));
-} else if (args.baseline) {
-  await uploadBaseline(args);
-} else {
-  console.error('Provide either --report <dir> or --baseline <png>');
-  process.exit(1);
+async function run() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.report) {
+    await uploadReport(args, path.resolve(args.report));
+  } else if (args.baseline) {
+    await uploadBaseline(args);
+  } else {
+    console.error('Provide either --report <dir> or --baseline <png>');
+    process.exit(1);
+  }
 }
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -336,25 +336,57 @@ CLI + docs:
 - Top-level `README.md` covering quick-start, CI, Authentik setup,
   Coolify deploy, MCP config.
 
-### Pending
+### Done (session 2, 2026-05-07)
 
-- **First boot.** Nothing has been `pnpm install`'d or `pnpm
-  prisma migrate`'d yet — this scaffold is unverified. Next session
-  should:
-  1. `pnpm install`
-  2. `docker compose --profile dev up -d`
-  3. `pnpm prisma migrate dev` (creates initial migration)
-  4. `pnpm dev:ingest` / `pnpm dev:viewer` / `pnpm --filter @visualize/mcp dev`
-  5. Run `pnpm --filter @visualize/viewer test` to produce the first
-     dogfood report.
-  6. `pnpm upload --url http://localhost:4000 ...` to round-trip a
-     report through the system.
-- Likely small bugs to shake out: Auth.js v5 route handler shape, Prisma
-  unique-key naming in approve route, type mismatches between viewer
-  components and Prisma types.
-- Nice-to-haves not yet built: drawing UI for annotations, run-vs-run
-  comparison view, retention/GC, Slack notifications, embedded trace
-  viewer. See Roadmap below — customer prioritizes.
+- **Booted the stack end-to-end.** Postgres → migrations → ingest →
+  viewer all running. Typecheck clean across all 4 packages.
+- **Round-trip verified.** Built a sample Playwright report bundle,
+  uploaded via `scripts/upload-report.ts` → CLI bundles + posts to
+  ingest → ingest extracts + parses + persists → viewer renders the
+  new project + run + tests with all the diff/video/error context.
+- **Home page redesigned** as project-grouped cards (per stakeholder
+  direction): pass-rate (color-coded), 30-run sparkline, latest-run
+  detail with PR/branch/commit/CI badges + per-status counts, plus a
+  mini-list of the next 5 runs.
+- **Dev auth bypass** via `DEV_AUTH_BYPASS=true` env so future sessions
+  can iterate the UI without standing up Authentik. Production unchanged.
+- **GitHub Action** at `action.yml` (composite). One YAML block in a
+  downstream repo's workflow uploads the Playwright report. Auto-detects
+  branch / PR / commit / CI run URL from the GitHub context. Optional
+  `baseline-path` input to also push goldens. Defaults to `fail-on-error:
+  false` so a flaky Visualize never breaks downstream CI.
+- **Healthchecks**: viewer `/api/health` (pings DB), ingest+mcp
+  `/healthz`. Wired into docker-compose so Coolify probes them.
+- **README expanded** with a concrete Coolify + Authentik walkthrough:
+  the SQL to provision the DB, the OIDC redirect URI, the env vars to
+  set, the hostname mappings, the migration step, and a smoke-test
+  curl block.
+- `scripts/seed.ts` for realistic dev data (2 projects, 32 runs, real
+  PNG snapshot triplet, real video file, real trace zip).
+- `scripts/screenshot.ts` drives Playwright against the running viewer
+  and commits screenshots under `screenshots/` as artifacts visible on
+  GitHub.
+
+### What still wants doing (Claude prioritizes; stakeholder may redirect)
+
+1. **Lightbox + zoom** on screenshots. Click any image → full-screen
+   with pinch-zoom and an actual↔expected slider. Requested by the
+   stakeholder when they said "lightboxes where appropriate."
+2. **Bulk approve in run** — "Approve all 7 diffs in this run" so a
+   sweep doesn't require N clicks.
+3. **Embedded Playwright trace viewer.** Playwright ships `show-trace`
+   as static HTML that can be served against our storage. Today the
+   viewer just offers Download.
+4. **Annotation drawing UI.** Data model and MCP write path both work;
+   the human-facing draw-on-screenshot UI is roadmap.
+5. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
+   only changed tests with the diffs side by side.
+6. **Retention / GC.** Videos eat disk fast — auto-delete runs older
+   than N days per project.
+7. **Slack/webhook notifications** on failure or approval.
+8. **Smoke / round-trip test in CI** — the verification I just did
+   manually should be a job that boots the stack with docker-compose
+   and asserts the upload pipeline still works on every PR.
 
 ### Roadmap (Claude-owned, customer prioritizes)
 

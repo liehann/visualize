@@ -20,11 +20,25 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/pngjs": "^6.0.5",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.59.1",
+    "pngjs": "^7.0.0",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "sharp",
+      "prisma",
+      "unrs-resolver"
+    ]
   }
 }

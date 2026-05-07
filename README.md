@@ -73,37 +73,31 @@ pnpm upload \
 
 ## CI integration
 
-In your repo's CI, after Playwright runs:
+There's a composite GitHub Action at the repo root (`action.yml`).
+One block in your workflow:
 
 ```yaml
 - run: npx playwright test
-- name: Upload to Visualize
+  continue-on-error: true
+
+- uses: liehann/visualize@main
   if: always()
-  run: |
-    npx tsx scripts/upload-report.ts \
-      --url https://ingest.your-domain \
-      --secret ${{ secrets.VISUALIZE_API_SECRET }} \
-      --project web \
-      --branch ${{ github.head_ref || github.ref_name }} \
-      --pr ${{ github.event.pull_request.number }} \
-      --commit ${{ github.sha }} \
-      --ci-provider github \
-      --ci-run-url ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }} \
-      --report ./playwright-report
+  with:
+    url: ${{ vars.VISUALIZE_URL }}            # e.g. https://ingest.visualize.example.com
+    secret: ${{ secrets.VISUALIZE_API_SECRET }}
+    project: my-app
+    # baseline-path: ./tests/__snapshots__    # optional
 ```
 
-Push golden screenshots the same way:
+The action auto-detects branch, PR number, commit, and CI run URL from
+the GitHub Actions context. Bundles `./playwright-report/` (or whatever
+`report-path` points at), POSTs to `<url>/runs`. Adds an annotation to
+the workflow with a link to the new run.
 
-```bash
-npx tsx scripts/upload-report.ts \
-  --url https://ingest.your-domain \
-  --secret $VISUALIZE_API_SECRET \
-  --project web \
-  --baseline-name homepage-hero \
-  --browser chromium \
-  --platform linux \
-  --baseline ./snapshots/homepage-hero.png
-```
+Don't want the upload to ever fail your CI? Default `fail-on-error: false`
+means a Visualize hiccup is a warning, not a workflow failure.
+
+A canned example workflow lives at `.github/workflows/example.yml`.
 
 ## Authentik OIDC setup
 
@@ -139,19 +133,99 @@ Tools exposed:
 
 ## Coolify deploy
 
-1. Push the repo to a Coolify-connected git provider.
-2. Add a new resource → Docker Compose. Point at this repo.
-3. In the Coolify UI for the deployed stack, set environment variables from
-   `.env.example`. Don't include the dev-profile Postgres password.
-4. Map a domain to each service:
-   - `ingest.<your-domain>` → `ingest:4000`
-   - `visualize.<your-domain>` → `viewer:3000`
-   - `mcp.<your-domain>` → `mcp:5000`
-5. Deploy. Coolify provisions Let's Encrypt certs per hostname.
+This is the canonical deploy target — `docker-compose.yml` is shaped for
+Coolify's compose deploy. Three services on three hostnames, healthchecks
+wired up, no production Postgres bundled.
 
-The compose file uses a named volume `visualize-data` for storage, so
-uploaded reports survive restarts. Postgres is intentionally **not** in
-the production compose — point `DATABASE_URL` at your shared instance.
+### 1. Pre-flight on your shared Postgres
+
+```sql
+CREATE ROLE visualize WITH LOGIN PASSWORD 'CHANGE_ME';
+CREATE DATABASE visualize OWNER visualize;
+GRANT ALL PRIVILEGES ON DATABASE visualize TO visualize;
+```
+
+Note the URL: `postgresql://visualize:CHANGE_ME@<host>:5432/visualize?schema=public`.
+
+### 2. Authentik OIDC
+
+In Authentik:
+
+1. Create an **OAuth2/OpenID Provider**.
+   - Client type: Confidential.
+   - Redirect URI: `https://visualize.<your-domain>/api/auth/callback/authentik`.
+   - Scopes: `openid`, `email`, `profile`.
+2. Create an **Application** bound to that Provider. Note the
+   **issuer** URL (looks like
+   `https://authentik.<your-domain>/application/o/visualize/`),
+   the **client ID**, and the **client secret**.
+3. Optionally bind the Application to specific Authentik groups so only
+   the right people can sign in.
+
+### 3. Generate secrets locally
+
+```bash
+openssl rand -hex 32   # AUTH_SECRET
+openssl rand -hex 32   # API_SECRET
+openssl rand -hex 32   # MCP_SECRET
+```
+
+### 4. Add the stack to Coolify
+
+1. **New Resource → Docker Compose** → point at this repo + branch.
+2. **Environment variables** (use the values from steps 1–3):
+
+   ```
+   DATABASE_URL=postgresql://visualize:...@your-pg-host:5432/visualize?schema=public
+   API_SECRET=<from step 3>
+   MCP_SECRET=<from step 3>
+   AUTH_SECRET=<from step 3>
+   VIEWER_URL=https://visualize.<your-domain>
+   AUTHENTIK_ISSUER=https://authentik.<your-domain>/application/o/visualize/
+   AUTHENTIK_CLIENT_ID=<from step 2>
+   AUTHENTIK_CLIENT_SECRET=<from step 2>
+   ```
+3. **Domain mapping** (one per service):
+
+   | Service   | Internal port | Public hostname              |
+   |-----------|---------------|------------------------------|
+   | `viewer`  | `3000`        | `visualize.<your-domain>`    |
+   | `ingest`  | `4000`        | `ingest.visualize.<your-domain>` |
+   | `mcp`     | `5000`        | `mcp.visualize.<your-domain>` |
+
+4. **Deploy**. Coolify provisions Let's Encrypt per hostname and runs the
+   healthchecks defined in `docker-compose.yml`.
+
+### 5. Run the migration on first deploy
+
+The image doesn't auto-migrate (deliberate — migrations should be a
+conscious step). After the first deploy:
+
+```bash
+# From your laptop, against the production DB
+DATABASE_URL='postgresql://visualize:...@your-pg-host:5432/visualize?schema=public' \
+  pnpm prisma migrate deploy --schema=prisma/schema.prisma
+```
+
+### 6. Smoke-test
+
+```bash
+# Healthchecks (no auth)
+curl -f https://ingest.visualize.<your-domain>/healthz
+curl -f https://visualize.<your-domain>/api/health
+curl -f https://mcp.visualize.<your-domain>/healthz
+
+# Try a bearer-protected endpoint with the wrong secret -> 401
+curl -i -X POST https://ingest.visualize.<your-domain>/runs \
+  -H 'Authorization: Bearer nope'
+```
+
+Then: open `https://visualize.<your-domain>` in a browser, sign in via
+Authentik, and you should land on an empty Projects page. Wire the
+GitHub Action into a real repo and the first run will populate it.
+
+The compose file uses a named volume `visualize-data` for asset storage,
+so uploaded reports survive restarts and redeploys.
 
 ## License
 

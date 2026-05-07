@@ -27,10 +27,10 @@ export type PlaywrightTestStatus = z.infer<typeof PlaywrightTestStatusSchema>;
 export const PlaywrightResultSchema = z.object({
   workerIndex: z.number().optional(),
   status: PlaywrightTestStatusSchema,
-  duration: z.number().default(0),
+  duration: z.number().optional(),
   startTime: z.string().optional(),
-  retry: z.number().default(0),
-  attachments: z.array(PlaywrightAttachmentSchema).default([]),
+  retry: z.number().optional(),
+  attachments: z.array(PlaywrightAttachmentSchema).optional(),
   errors: z
     .array(
       z.object({
@@ -39,9 +39,9 @@ export const PlaywrightResultSchema = z.object({
         snippet: z.string().optional(),
       }),
     )
-    .default([]),
-  stdout: z.array(z.union([z.string(), z.object({ text: z.string() })])).default([]),
-  stderr: z.array(z.union([z.string(), z.object({ text: z.string() })])).default([]),
+    .optional(),
+  stdout: z.array(z.union([z.string(), z.object({ text: z.string() })])).optional(),
+  stderr: z.array(z.union([z.string(), z.object({ text: z.string() })])).optional(),
 });
 export type PlaywrightResult = z.infer<typeof PlaywrightResultSchema>;
 
@@ -49,7 +49,7 @@ export const PlaywrightTestSchema = z.object({
   projectName: z.string().optional(),
   expectedStatus: PlaywrightTestStatusSchema.optional(),
   status: PlaywrightTestStatusSchema.optional(),
-  results: z.array(PlaywrightResultSchema).default([]),
+  results: z.array(PlaywrightResultSchema).optional(),
 });
 export type PlaywrightTest = z.infer<typeof PlaywrightTestSchema>;
 
@@ -59,7 +59,7 @@ export const PlaywrightSpecSchema = z.object({
   line: z.number().optional(),
   column: z.number().optional(),
   ok: z.boolean().optional(),
-  tests: z.array(PlaywrightTestSchema).default([]),
+  tests: z.array(PlaywrightTestSchema).optional(),
 });
 export type PlaywrightSpec = z.infer<typeof PlaywrightSpecSchema>;
 
@@ -81,8 +81,8 @@ export const PlaywrightSuiteSchema: z.ZodType<PlaywrightSuite> = z.lazy(() =>
 
 export const PlaywrightReportSchema = z.object({
   config: z.unknown().optional(),
-  suites: z.array(PlaywrightSuiteSchema).default([]),
-  errors: z.array(z.unknown()).default([]),
+  suites: z.array(PlaywrightSuiteSchema).optional(),
+  errors: z.array(z.unknown()).optional(),
   stats: z
     .object({
       startTime: z.string().optional(),

@@ -79,7 +79,7 @@ export function flattenSpecs(
     for (const child of suite.suites ?? []) walk(child, titles);
   };
 
-  for (const top of report.suites) walk(top, []);
+  for (const top of report.suites ?? []) walk(top, []);
   return out;
 }
 
@@ -91,7 +91,7 @@ function specToParsed(
   bundleRel: string,
 ): ParsedSpec {
   const titlePath = [...ancestorTitles, spec.title].filter(Boolean).join(' > ');
-  const results = test.results.map((r) => resultToParsed(r, bundleRel));
+  const results = (test.results ?? []).map((r) => resultToParsed(r, bundleRel));
   const finalResult = results[results.length - 1];
   const status = (test.status ?? finalResult?.status ?? 'skipped') as TestStatus;
   const durationMs = results.reduce((a, r) => a + r.durationMs, 0);
@@ -110,13 +110,15 @@ function specToParsed(
 }
 
 function resultToParsed(r: PlaywrightResult, bundleRel: string): ParsedResult {
-  const firstError = r.errors[0];
+  const errors = r.errors ?? [];
+  const firstError = errors[0];
   const stdout = joinStream(r.stdout);
   const stderr = joinStream(r.stderr);
+  const attachments = r.attachments ?? [];
   return {
-    retry: r.retry,
+    retry: r.retry ?? 0,
     status: r.status,
-    durationMs: r.duration,
+    durationMs: r.duration ?? 0,
     startedAt: r.startTime ? new Date(r.startTime) : undefined,
     workerIndex: r.workerIndex,
     errorMessage: firstError?.message,
@@ -124,14 +126,14 @@ function resultToParsed(r: PlaywrightResult, bundleRel: string): ParsedResult {
     errorSnippet: firstError?.snippet,
     stdout,
     stderr,
-    attachments: r.attachments.map((a) => attachmentToParsed(a, bundleRel)),
+    attachments: attachments.map((a) => attachmentToParsed(a, bundleRel)),
   };
 }
 
 function joinStream(
-  arr: Array<string | { text: string }>,
+  arr: Array<string | { text: string }> | undefined,
 ): string | undefined {
-  if (!arr.length) return undefined;
+  if (!arr || !arr.length) return undefined;
   return arr.map((x) => (typeof x === 'string' ? x : x.text)).join('');
 }
 

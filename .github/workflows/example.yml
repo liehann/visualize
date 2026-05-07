@@ -1,0 +1,36 @@
+# Example: how a downstream repo would use the Visualize GitHub Action.
+# Copy this into your project's `.github/workflows/` and adjust paths.
+name: Playwright + Visualize
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - run: npx playwright test
+        # Continue even on test failure so the report still uploads.
+        continue-on-error: true
+
+      - name: Upload Playwright report to Visualize
+        if: always()
+        uses: liehann/visualize@main
+        with:
+          url: ${{ vars.VISUALIZE_URL }}
+          secret: ${{ secrets.VISUALIZE_API_SECRET }}
+          project: phloots-web
+          # Optional: also push goldens from this commit so others can rebase
+          # without local snapshot-update churn.
+          # baseline-path: ./tests/__snapshots__

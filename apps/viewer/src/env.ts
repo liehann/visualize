@@ -9,6 +9,9 @@ const Schema = z.object({
   AUTHENTIK_CLIENT_ID: z.string().min(1),
   AUTHENTIK_CLIENT_SECRET: z.string().min(1),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  // Dev-only: set to "true" to skip Authentik OIDC and inject a fake session.
+  // NEVER set in prod.
+  DEV_AUTH_BYPASS: z.string().optional(),
 });
 
 export const env = Schema.parse({
@@ -20,4 +23,5 @@ export const env = Schema.parse({
   AUTHENTIK_CLIENT_ID: process.env.AUTHENTIK_CLIENT_ID,
   AUTHENTIK_CLIENT_SECRET: process.env.AUTHENTIK_CLIENT_SECRET,
   NODE_ENV: process.env.NODE_ENV,
+  DEV_AUTH_BYPASS: process.env.DEV_AUTH_BYPASS,
 });

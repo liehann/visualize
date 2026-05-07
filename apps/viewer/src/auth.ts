@@ -1,8 +1,19 @@
-import NextAuth from 'next-auth';
+import NextAuth, { type Session } from 'next-auth';
 import Authentik from 'next-auth/providers/authentik';
-import { env } from './env.js';
+import { env } from './env';
 
-export const { auth, handlers, signIn, signOut } = NextAuth({
+export const isDevBypass = env.DEV_AUTH_BYPASS === 'true';
+
+const DEV_SESSION: Session = {
+  user: {
+    email: 'dev@visualize.local',
+    name: 'Dev User',
+    image: null,
+  },
+  expires: '2099-01-01T00:00:00.000Z',
+};
+
+const nextAuth = NextAuth({
   secret: env.AUTH_SECRET,
   trustHost: true,
   providers: [
@@ -16,8 +27,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, profile }) {
       if (profile) {
-        // Persist Authentik subject + email + name on the JWT so the UI can
-        // show "approved by ..." attribution without a DB round-trip.
         if (typeof profile.email === 'string') token.email = profile.email;
         if (typeof profile.name === 'string') token.name = profile.name;
       }
@@ -29,7 +38,12 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  pages: {
-    signIn: '/sign-in',
-  },
+  pages: { signIn: '/sign-in' },
 });
+
+export const { handlers, signIn, signOut } = nextAuth;
+
+export async function auth(): Promise<Session | null> {
+  if (isDevBypass) return DEV_SESSION;
+  return nextAuth.auth();
+}

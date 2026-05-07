@@ -2,96 +2,213 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { RunStatusBadge } from '@/components/status-badge';
 import { BranchPr } from '@/components/branch-pr';
+import { Sparkline } from '@/components/sparkline';
 import { formatDuration, formatRelativeTime } from '@/lib/format';
-import { CircleCheck, CircleX, CircleAlert, CircleDashed } from 'lucide-react';
+import {
+  CircleCheck,
+  CircleX,
+  CircleAlert,
+  CircleDashed,
+  Activity,
+} from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const runs = await prisma.run.findMany({
-    take: 50,
-    orderBy: { createdAt: 'desc' },
-    include: { project: true },
+  const projects = await prisma.project.findMany({
+    orderBy: { createdAt: 'asc' },
+    include: {
+      runs: {
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      },
+    },
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between">
+    <div className="space-y-8">
+      <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Recent runs</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="mt-1 text-sm text-fg-muted">
-            Most recent Playwright runs across all projects.
+            Visual regression and Playwright runs across {projects.length}{' '}
+            project{projects.length === 1 ? '' : 's'}.
           </p>
         </div>
-      </div>
+        <div className="text-xs text-fg-subtle">
+          {projects.reduce((acc, p) => acc + p.runs.length, 0)} recent runs
+        </div>
+      </header>
 
-      {runs.length === 0 ? (
+      {projects.length === 0 ? (
         <EmptyState />
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-bg-panel">
-          {runs.map((run) => (
-            <li key={run.id}>
-              <Link
-                href={`/runs/${run.id}`}
-                className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-bg-hover"
-              >
-                <div className="flex w-32 shrink-0 items-center gap-2">
-                  <RunStatusBadge status={run.status} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate font-medium text-fg">
-                      {run.project.name}
-                    </span>
-                    <span className="text-xs text-fg-subtle">
-                      {formatRelativeTime(run.createdAt)}
-                    </span>
-                  </div>
-                  <div className="mt-1.5">
-                    <BranchPr
-                      branch={run.branch}
-                      prNumber={run.prNumber}
-                      commitSha={run.commitSha}
-                      ciRunUrl={run.ciRunUrl}
-                    />
-                  </div>
-                </div>
-
-                <RunCounts run={run} />
-                <span className="w-14 text-right font-mono text-xs text-fg-subtle">
-                  {formatDuration(run.durationMs)}
-                </span>
-              </Link>
-            </li>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {projects.map((p) => (
+            <ProjectCard key={p.id} project={p} />
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
 }
 
-function RunCounts({
-  run,
+function ProjectCard({
+  project,
 }: {
-  run: {
-    passedTests: number;
-    failedTests: number;
-    flakyTests: number;
-    skippedTests: number;
+  project: {
+    id: string;
+    name: string;
+    slug: string;
+    runs: Array<{
+      id: string;
+      status: 'passed' | 'failed' | 'flaky' | 'running' | 'cancelled';
+      branch: string | null;
+      prNumber: number | null;
+      commitSha: string | null;
+      ciRunUrl: string | null;
+      createdAt: Date;
+      durationMs: number | null;
+      totalTests: number;
+      passedTests: number;
+      failedTests: number;
+      flakyTests: number;
+      skippedTests: number;
+    }>;
   };
 }) {
+  const latest = project.runs[0];
+  const passRate =
+    project.runs.length === 0
+      ? null
+      : Math.round(
+          (project.runs.filter((r) => r.status === 'passed').length /
+            project.runs.length) *
+            100,
+        );
+
   return (
-    <div className="hidden items-center gap-4 text-xs font-mono text-fg-muted md:flex">
-      <Stat icon={CircleCheck} value={run.passedTests} className="text-success" />
-      <Stat icon={CircleX} value={run.failedTests} className="text-danger" />
-      <Stat icon={CircleAlert} value={run.flakyTests} className="text-warn" />
-      <Stat
-        icon={CircleDashed}
-        value={run.skippedTests}
-        className="text-fg-subtle"
-      />
-    </div>
+    <article className="group overflow-hidden rounded-xl border border-border bg-bg-panel transition-colors hover:border-border-strong">
+      <header className="flex items-start justify-between gap-4 border-b border-border p-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <Activity className="h-4 w-4 text-accent" />
+            <h2 className="truncate text-lg font-semibold tracking-tight">
+              {project.name}
+            </h2>
+          </div>
+          <p className="mt-1 font-mono text-xs text-fg-subtle">
+            {project.slug}
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-[11px] uppercase tracking-wider text-fg-subtle">
+            pass rate
+          </div>
+          <div
+            className={`mt-0.5 font-mono text-xl tabular-nums ${
+              passRate == null
+                ? 'text-fg-subtle'
+                : passRate >= 95
+                  ? 'text-success'
+                  : passRate >= 80
+                    ? 'text-warn'
+                    : 'text-danger'
+            }`}
+          >
+            {passRate == null ? '—' : `${passRate}%`}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex items-end justify-between gap-4 border-b border-border px-5 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-fg-subtle">
+          last {project.runs.length} runs
+        </div>
+        <Sparkline runs={project.runs} />
+      </div>
+
+      {latest ? (
+        <Link
+          href={`/runs/${latest.id}`}
+          className="block px-5 py-4 transition-colors hover:bg-bg-hover"
+        >
+          <div className="flex items-center gap-3">
+            <RunStatusBadge status={latest.status} />
+            <span className="text-xs text-fg-subtle">
+              {formatRelativeTime(latest.createdAt)}
+            </span>
+            <span className="ml-auto font-mono text-xs text-fg-subtle">
+              {formatDuration(latest.durationMs)}
+            </span>
+          </div>
+          <div className="mt-2.5">
+            <BranchPr
+              branch={latest.branch}
+              prNumber={latest.prNumber}
+              commitSha={latest.commitSha}
+              ciRunUrl={latest.ciRunUrl}
+            />
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-xs font-mono text-fg-muted">
+            <Stat icon={CircleCheck} value={latest.passedTests} className="text-success" />
+            <Stat icon={CircleX} value={latest.failedTests} className="text-danger" />
+            <Stat icon={CircleAlert} value={latest.flakyTests} className="text-warn" />
+            <Stat
+              icon={CircleDashed}
+              value={latest.skippedTests}
+              className="text-fg-subtle"
+            />
+            <span className="ml-auto text-fg-subtle">
+              {latest.totalTests} tests
+            </span>
+          </div>
+        </Link>
+      ) : (
+        <div className="px-5 py-8 text-center text-sm text-fg-subtle">
+          No runs yet
+        </div>
+      )}
+
+      {project.runs.length > 1 && (
+        <RunMiniList runs={project.runs.slice(1, 6)} />
+      )}
+    </article>
+  );
+}
+
+function RunMiniList({
+  runs,
+}: {
+  runs: Array<{
+    id: string;
+    status: 'passed' | 'failed' | 'flaky' | 'running' | 'cancelled';
+    branch: string | null;
+    prNumber: number | null;
+    commitSha: string | null;
+    createdAt: Date;
+    durationMs: number | null;
+  }>;
+}) {
+  return (
+    <ul className="divide-y divide-border border-t border-border">
+      {runs.map((r) => (
+        <li key={r.id}>
+          <Link
+            href={`/runs/${r.id}`}
+            className="flex items-center gap-3 px-5 py-2 text-xs transition-colors hover:bg-bg-hover"
+          >
+            <RunStatusBadge status={r.status} />
+            <span className="truncate text-fg-muted">
+              {r.prNumber != null ? `PR #${r.prNumber}` : r.branch ?? '—'}
+            </span>
+            <span className="ml-auto font-mono text-fg-subtle">
+              {formatRelativeTime(r.createdAt)}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -114,10 +231,10 @@ function Stat({
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-bg-panel p-12 text-center">
-      <h2 className="text-base font-medium">No runs yet</h2>
+    <div className="rounded-xl border border-dashed border-border bg-bg-panel p-12 text-center">
+      <h2 className="text-base font-medium">No projects yet</h2>
       <p className="mt-1 text-sm text-fg-muted">
-        Upload a Playwright report from CI to see it here.
+        Upload a Playwright report from CI to create one.
       </p>
       <pre className="mx-auto mt-5 inline-block rounded border border-border-strong bg-bg-hover px-4 py-3 text-left font-mono text-xs text-fg-muted">
         {`curl -X POST https://ingest.your-domain/runs \\

@@ -25,6 +25,12 @@ services:
       - visualize-data:/var/lib/visualize/data
     ports:
       - '4000:4000'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   viewer:
     build:
@@ -46,6 +52,12 @@ services:
       - visualize-data:/var/lib/visualize/data:ro
     ports:
       - '3000:3000'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   mcp:
     build:
@@ -62,6 +74,12 @@ services:
       - visualize-data:/var/lib/visualize/data:ro
     ports:
       - '5000:5000'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:5000/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Local-dev only. Bring up with: docker compose --profile dev up -d
   postgres:

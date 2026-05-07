@@ -5,17 +5,44 @@
 > Claude to resume. Everything Claude needs to continue without rebriefing
 > should live here.
 
-## Roles
+## Roles & autonomy
 
-- **Customer (stakeholder).** Provides high-level direction and priorities.
-  Owns "what matters next." Does **not** design or implement.
-- **Claude (the team).** Owns PM, UX, UI design, engineering, and test. Has
-  full authority over architecture, naming, libraries, file layout, and
-  scope-within-a-feature. **Asks the customer for input on feature
-  prioritization** — not on implementation choices.
+### Customer (stakeholder)
+- Provides high-level direction and the north star of "what matters."
+- Reviews shipped work, points out things that suck.
+- Does **not** design, implement, or pick libraries.
 
-When in doubt about priority, ask. When in doubt about implementation, decide
-and proceed.
+### Claude (the team)
+Owns the entire product lifecycle:
+- **Product management** — what to build next, in what order. The customer
+  is the stakeholder, not the PM.
+- **UX and UI design** — visual style, interaction model, information
+  architecture. No design-by-committee.
+- **Engineering** — architecture, libraries, naming, file layout,
+  refactors.
+- **QA / test** — testing strategy, coverage, what to automate.
+- **Quality & maintenance** — keeps the system healthy. **No outages.**
+  This means: healthchecks, graceful failure modes, idempotent operations,
+  no silent data loss, recoverable migrations, useful logs, and bugs fixed
+  at the root not patched at the edges.
+- **Operations** — Dockerfiles, compose, deploy story, rollback story.
+
+### What requires customer input
+- **Feature prioritization** when there's a real fork in the road. Surface
+  2–3 options and the tradeoff in one sentence each.
+- **Hard constraint changes** (budget, hosting, must-have features).
+- **Anything that might be irreversible or surprising** to the stakeholder.
+
+### What does NOT require customer input
+- Library choices, framework versions, architectural patterns.
+- UX/UI decisions, color palette, typography, layout.
+- Test strategy, coverage targets, which tests to write.
+- Internal API shapes, file/folder layout, naming.
+- Refactors and cleanups that improve maintainability.
+- Order of operations within an agreed feature.
+
+**Default stance: decide and proceed.** Show the result; the customer can
+redirect.
 
 ## Mission
 
@@ -143,6 +170,75 @@ These are how Claude investigates failing PRs:
 - **Free/OSS only.** If something would cost money, find an alternative
   or ask.
 
+## Quality & testing strategy
+
+The product handles real CI uploads, real screenshots, real money in the
+form of engineer time triaging failures. **No outages, no silent data
+loss.** That said, a greenfield project also needs to move fast — over-
+testing kills velocity. The rule is: **test what would silently corrupt
+data, break the public contract, or regress UX**. Don't test trivia.
+
+### What we test, in priority order
+
+1. **Public contracts (high coverage).** The CI-facing endpoints
+   (`POST /runs`, `POST /baselines`), the MCP tool surface, and
+   `POST /api/approve/[attachmentId]`. These are what other systems and
+   Claude depend on. Each contract gets a happy-path integration test +
+   one failure-path test (auth rejected, malformed input).
+
+2. **Data correctness (high coverage).** The Playwright report parser
+   (`packages/core/src/parser.ts`) — wrong parsing means wrong results
+   forever. Snapshot triplet detection. Run rollup math. Zip extraction
+   (zip-slip safety). These get unit tests against fixture report bundles.
+
+3. **Visual regressions on the viewer (medium, dogfooded).** The viewer
+   has its own Playwright suite that takes `toHaveScreenshot()` shots of
+   every key page. Reports go to Visualize, baselines live in Visualize.
+   This is the dogfood loop and the canary for "did we break the UI."
+
+4. **End-to-end smoke (medium).** A handful of tests that boot the
+   full stack and round-trip an upload → viewer render → approve →
+   baseline-updated. Catches integration drift.
+
+### What we do NOT test
+
+- Trivial UI logic that has no branching. If a component just renders
+  props, the visual regression test covers it.
+- Implementation details (private helpers, internal types). They change.
+- Generated code (Prisma client, Next.js build output).
+- Third-party libraries.
+
+### Quality gates
+
+- **Typecheck** must pass on every PR (`pnpm typecheck`).
+- **Unit + parser tests** must pass on every PR.
+- **Visual regression suite** must pass on every PR. New visual diffs
+  require explicit per-screenshot approval through the viewer (the same
+  flow the customer uses) — that's the whole point of the product.
+- **No silent data migrations.** Every Prisma migration is reviewed;
+  destructive migrations require a backup script in the same PR.
+
+### Operational defaults (the "no outages" pact)
+
+- All services expose `GET /healthz`. Compose healthchecks wired up.
+- All inbound HTTP endpoints validate input with Zod, never trust shapes.
+- All Prisma writes that span entities go through `$transaction`.
+- All file operations under `DATA_DIR` go through `resolveDataPath` which
+  enforces path-traversal protection.
+- All bearer tokens compared with `crypto.timingSafeEqual`.
+- All long-running ingest work cleans up partial state on failure.
+- Logs use structured JSON in production; PII goes through `redact` rules.
+- Postgres connection pool sized conservatively; queries have indexes;
+  `take` limits on every list query.
+- Migrations are forward-only and reversible by convention (no destructive
+  data changes without a one-shot recovery plan).
+
+### When something breaks
+
+Root-cause it, don't paper over. If a test starts flaking, fix the test
+or the underlying race — never `retry` away the symptom. If a migration
+fails in prod, write a recovery migration; do not edit applied migrations.
+
 ## Local dev
 
 ```bash
@@ -240,25 +336,57 @@ CLI + docs:
 - Top-level `README.md` covering quick-start, CI, Authentik setup,
   Coolify deploy, MCP config.
 
-### Pending
+### Done (session 2, 2026-05-07)
 
-- **First boot.** Nothing has been `pnpm install`'d or `pnpm
-  prisma migrate`'d yet — this scaffold is unverified. Next session
-  should:
-  1. `pnpm install`
-  2. `docker compose --profile dev up -d`
-  3. `pnpm prisma migrate dev` (creates initial migration)
-  4. `pnpm dev:ingest` / `pnpm dev:viewer` / `pnpm --filter @visualize/mcp dev`
-  5. Run `pnpm --filter @visualize/viewer test` to produce the first
-     dogfood report.
-  6. `pnpm upload --url http://localhost:4000 ...` to round-trip a
-     report through the system.
-- Likely small bugs to shake out: Auth.js v5 route handler shape, Prisma
-  unique-key naming in approve route, type mismatches between viewer
-  components and Prisma types.
-- Nice-to-haves not yet built: drawing UI for annotations, run-vs-run
-  comparison view, retention/GC, Slack notifications, embedded trace
-  viewer. See Roadmap below — customer prioritizes.
+- **Booted the stack end-to-end.** Postgres → migrations → ingest →
+  viewer all running. Typecheck clean across all 4 packages.
+- **Round-trip verified.** Built a sample Playwright report bundle,
+  uploaded via `scripts/upload-report.ts` → CLI bundles + posts to
+  ingest → ingest extracts + parses + persists → viewer renders the
+  new project + run + tests with all the diff/video/error context.
+- **Home page redesigned** as project-grouped cards (per stakeholder
+  direction): pass-rate (color-coded), 30-run sparkline, latest-run
+  detail with PR/branch/commit/CI badges + per-status counts, plus a
+  mini-list of the next 5 runs.
+- **Dev auth bypass** via `DEV_AUTH_BYPASS=true` env so future sessions
+  can iterate the UI without standing up Authentik. Production unchanged.
+- **GitHub Action** at `action.yml` (composite). One YAML block in a
+  downstream repo's workflow uploads the Playwright report. Auto-detects
+  branch / PR / commit / CI run URL from the GitHub context. Optional
+  `baseline-path` input to also push goldens. Defaults to `fail-on-error:
+  false` so a flaky Visualize never breaks downstream CI.
+- **Healthchecks**: viewer `/api/health` (pings DB), ingest+mcp
+  `/healthz`. Wired into docker-compose so Coolify probes them.
+- **README expanded** with a concrete Coolify + Authentik walkthrough:
+  the SQL to provision the DB, the OIDC redirect URI, the env vars to
+  set, the hostname mappings, the migration step, and a smoke-test
+  curl block.
+- `scripts/seed.ts` for realistic dev data (2 projects, 32 runs, real
+  PNG snapshot triplet, real video file, real trace zip).
+- `scripts/screenshot.ts` drives Playwright against the running viewer
+  and commits screenshots under `screenshots/` as artifacts visible on
+  GitHub.
+
+### What still wants doing (Claude prioritizes; stakeholder may redirect)
+
+1. **Lightbox + zoom** on screenshots. Click any image → full-screen
+   with pinch-zoom and an actual↔expected slider. Requested by the
+   stakeholder when they said "lightboxes where appropriate."
+2. **Bulk approve in run** — "Approve all 7 diffs in this run" so a
+   sweep doesn't require N clicks.
+3. **Embedded Playwright trace viewer.** Playwright ships `show-trace`
+   as static HTML that can be served against our storage. Today the
+   viewer just offers Download.
+4. **Annotation drawing UI.** Data model and MCP write path both work;
+   the human-facing draw-on-screenshot UI is roadmap.
+5. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
+   only changed tests with the diffs side by side.
+6. **Retention / GC.** Videos eat disk fast — auto-delete runs older
+   than N days per project.
+7. **Slack/webhook notifications** on failure or approval.
+8. **Smoke / round-trip test in CI** — the verification I just did
+   manually should be a job that boots the stack with docker-compose
+   and asserts the upload pipeline still works on every PR.
 
 ### Roadmap (Claude-owned, customer prioritizes)
 

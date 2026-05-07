@@ -1,0 +1,124 @@
+name: 'Upload Playwright report to Visualize'
+description: >-
+  Bundles your Playwright report directory + posts it to a Visualize
+  ingest service. Auto-detects branch, PR number, commit, and CI run URL
+  from GitHub Actions context. Optionally also uploads golden screenshots.
+
+branding:
+  icon: 'eye'
+  color: 'blue'
+
+inputs:
+  url:
+    description: >-
+      Base URL of your Visualize ingest service
+      (e.g. https://ingest.visualize.example.com).
+    required: true
+  secret:
+    description: 'Bearer token (`API_SECRET`) for the ingest service.'
+    required: true
+  project:
+    description: >-
+      Project slug. Created on first upload; reused thereafter.
+    required: true
+  project-name:
+    description: 'Human-friendly project name (defaults to the slug).'
+    required: false
+  report-path:
+    description: >-
+      Path to the Playwright `playwright-report/` directory. Defaults to
+      `./playwright-report`.
+    required: false
+    default: './playwright-report'
+  baseline-path:
+    description: >-
+      Optional: path to a directory of golden PNGs to upload as baselines.
+      Filenames (sans `.png`) become the snapshot name.
+    required: false
+  fail-on-error:
+    description: >-
+      If true, the action fails the workflow when the upload fails.
+      Defaults to false so a flaky Visualize doesn't block your CI.
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect git metadata
+      id: meta
+      shell: bash
+      run: |
+        echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" >> "$GITHUB_OUTPUT"
+        echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        if [ -n "${{ github.event.pull_request.number }}" ]; then
+          echo "pr=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+        fi
+        echo "ci_run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload Playwright report
+      if: hashFiles(format('{0}/report.json', inputs.report-path)) != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        REPORT_DIR="${{ inputs.report-path }}"
+        ZIP="$RUNNER_TEMP/visualize-bundle.zip"
+        ( cd "$REPORT_DIR" && zip -rq "$ZIP" . )
+
+        META=$(jq -nc \
+          --arg projectSlug "${{ inputs.project }}" \
+          --arg projectName "${{ inputs.project-name }}" \
+          --arg branch "${{ steps.meta.outputs.branch }}" \
+          --arg commitSha "${{ steps.meta.outputs.commit }}" \
+          --arg ciProvider "github" \
+          --arg ciRunUrl "${{ steps.meta.outputs.ci_run_url }}" \
+          --argjson prNumber "${{ steps.meta.outputs.pr || 'null' }}" \
+          '{projectSlug:$projectSlug, projectName:($projectName|select(.!="")), branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber} | with_entries(select(.value != null and .value != ""))')
+
+        echo "Posting report to ${{ inputs.url }}/runs"
+        STATUS=$(curl -sS -o "$RUNNER_TEMP/visualize-response.json" -w '%{http_code}' \
+          -X POST "${{ inputs.url }}/runs" \
+          -H "Authorization: Bearer ${{ inputs.secret }}" \
+          -F "meta=$META" \
+          -F "bundle=@$ZIP")
+
+        cat "$RUNNER_TEMP/visualize-response.json"
+        echo
+        if [ "$STATUS" != "201" ] && [ "$STATUS" != "200" ]; then
+          echo "::warning::Visualize upload returned $STATUS"
+          if [ "${{ inputs.fail-on-error }}" = "true" ]; then
+            exit 1
+          fi
+        else
+          ID=$(jq -r '.id // empty' "$RUNNER_TEMP/visualize-response.json")
+          if [ -n "$ID" ]; then
+            echo "::notice title=Visualize::Run uploaded: ${{ inputs.url }}/runs/$ID"
+          fi
+        fi
+
+    - name: Upload baselines
+      if: inputs.baseline-path != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        DIR="${{ inputs.baseline-path }}"
+        [ -d "$DIR" ] || { echo "baseline-path '$DIR' is not a directory"; exit 1; }
+        find "$DIR" -name '*.png' -type f | while read -r png; do
+          NAME=$(basename "$png" .png)
+          META=$(jq -nc \
+            --arg projectSlug "${{ inputs.project }}" \
+            --arg name "$NAME" \
+            --arg branch "${{ steps.meta.outputs.branch }}" \
+            --arg commitSha "${{ steps.meta.outputs.commit }}" \
+            '{projectSlug:$projectSlug, name:$name, branch:$branch, commitSha:$commitSha}')
+          echo "Uploading baseline: $NAME"
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST "${{ inputs.url }}/baselines" \
+            -H "Authorization: Bearer ${{ inputs.secret }}" \
+            -F "meta=$META" \
+            -F "image=@$png")
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Baseline upload for $NAME returned $STATUS"
+            if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
+          fi
+        done

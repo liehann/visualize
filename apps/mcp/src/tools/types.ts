@@ -20,6 +20,19 @@ export type ToolDefinition<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   handler: ToolHandler<S>;
 };
 
+/**
+ * Type-erased tool definition for the aggregator. Each individual tool can
+ * keep its strong Zod-inferred input type via `ToolDefinition<MySchema>`; we
+ * lose that strength only at the boundary where heterogeneous tools live in
+ * one array.
+ */
+export type AnyToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: z.ZodTypeAny;
+  handler: (input: unknown) => Promise<ToolResult>;
+};
+
 /** Helper for tools that just want to return a JSON-serialized payload. */
 export function jsonResult(data: unknown): ToolResult {
   return {

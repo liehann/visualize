@@ -60,7 +60,7 @@ jobs:
       - run: pnpm prisma generate --schema=prisma/schema.prisma
       - run: pnpm prisma migrate deploy --schema=prisma/schema.prisma
 
-      - name: Build core
+      - name: Build core (needed for downstream imports)
         run: pnpm --filter @visualize/core build
 
       - name: Cache Playwright browsers

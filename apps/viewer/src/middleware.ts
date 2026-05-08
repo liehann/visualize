@@ -20,6 +20,6 @@ export default function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api/auth|api/health|_next/static|_next/image|favicon.ico|sign-in).*)',
+    '/((?!api/auth|api/health|_next/static|_next/image|favicon.ico|icon|apple-icon|opengraph-image|twitter-image|sign-in).*)',
   ],
 };

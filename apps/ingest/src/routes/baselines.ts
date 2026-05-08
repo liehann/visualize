@@ -5,6 +5,7 @@ import type { MultipartFile } from '@fastify/multipart';
 import { prisma } from '@visualize/core/db';
 import { resolveDataPath, writeStreamToDataDir } from '@visualize/core/storage';
 import { BaselineUploadMetadataSchema } from '@visualize/core/types';
+import { authorizeProjectUpload } from '../auth.js';
 
 type BaselineMeta = ReturnType<typeof BaselineUploadMetadataSchema.parse>;
 
@@ -79,6 +80,13 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
     }
 
     const { meta, imageStream } = await parseMultipart(req);
+
+    if (!(await authorizeProjectUpload(req, meta.projectSlug))) {
+      imageStream.resume();
+      throw app.httpErrors.unauthorized(
+        'Bearer token does not match this project. Generate a per-project token from the viewer or use the global API_SECRET.',
+      );
+    }
 
     // Upsert project
     const project = await prisma.project.upsert({

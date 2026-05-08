@@ -9,6 +9,7 @@ import { extractZip, ensureDir, resolveDataPath } from '@visualize/core/storage'
 import { flattenSpecs, loadReport, rollupRun } from '@visualize/core/parser';
 import { RunUploadMetadataSchema } from '@visualize/core/types';
 import type { Prisma } from '@prisma/client';
+import { authorizeProjectUpload } from '../auth.js';
 
 type RunMeta = ReturnType<typeof RunUploadMetadataSchema.parse>;
 
@@ -90,6 +91,13 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
     }
 
     const { meta, bundleTmpPath } = await parseMultipart(req);
+
+    if (!(await authorizeProjectUpload(req, meta.projectSlug))) {
+      await fs.unlink(bundleTmpPath).catch(() => undefined);
+      throw app.httpErrors.unauthorized(
+        'Bearer token does not match this project. Generate a per-project token from the viewer or use the global API_SECRET.',
+      );
+    }
 
     const runId = randomUUID();
     const storagePath = `runs/${runId}/`;

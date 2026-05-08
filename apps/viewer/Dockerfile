@@ -31,6 +31,9 @@ RUN apk add --no-cache openssl ca-certificates
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+# Next.js standalone server.js binds to $HOSTNAME, which Docker sets to the
+# container ID by default — that breaks loopback healthchecks. Pin to 0.0.0.0.
+ENV HOSTNAME=0.0.0.0
 
 # Next.js standalone output bundles only what's needed (incl. Prisma engines
 # via outputFileTracingIncludes in next.config.mjs).

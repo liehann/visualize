@@ -29,6 +29,10 @@
     "./tokens": {
       "types": "./dist/tokens.d.ts",
       "default": "./dist/tokens.js"
+    },
+    "./auth-middleware": {
+      "types": "./dist/auth-middleware.d.ts",
+      "default": "./dist/auth-middleware.js"
     }
   },
   "files": [

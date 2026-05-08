@@ -31,28 +31,36 @@ async function main(): Promise<void> {
 
   app.get('/healthz', async () => ({ ok: true }));
 
-  // Build a single MCP Server instance and a single Streamable HTTP transport.
-  // The transport is stateless from Fastify's perspective: we hand it the raw
-  // node req/res pair on every /mcp request and let it dispatch.
-  const mcp = buildMcpServer();
-  const transport = new StreamableHTTPServerTransport({
-    // Stateless: do not require the client to send a session id.
-    sessionIdGenerator: undefined,
-  });
-  await mcp.connect(transport);
-
+  // The Streamable HTTP transport in stateless mode (sessionIdGenerator =
+  // undefined) is *not* reusable across requests — its internal state binds
+  // to the response stream of the request that created it. The MCP SDK
+  // examples build a fresh server+transport pair per request and tear them
+  // down on `res.close`. We do the same. The Server instance is cheap; the
+  // tool handlers it dispatches to read shared singletons (Prisma) so this
+  // doesn't multiply DB connections.
   const handleMcp = async (
     req: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> => {
-    // Pass control to the SDK transport. It will write the response itself.
     const raw = req.raw as IncomingMessage;
     const res = reply.raw as ServerResponse;
     const parsedBody =
       Buffer.isBuffer(req.body) && req.body.length > 0
         ? JSON.parse(req.body.toString('utf8'))
         : undefined;
+
+    const mcp = buildMcpServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+
+    res.on('close', () => {
+      transport.close().catch((err) => app.log.warn({ err }, 'transport close'));
+      mcp.close().catch((err) => app.log.warn({ err }, 'server close'));
+    });
+
     try {
+      await mcp.connect(transport);
       await transport.handleRequest(raw, res, parsedBody);
     } catch (err) {
       app.log.error({ err }, 'MCP transport error');
@@ -74,16 +82,6 @@ async function main(): Promise<void> {
 
   const close = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
-    try {
-      await transport.close();
-    } catch (err) {
-      app.log.warn({ err }, 'transport close error');
-    }
-    try {
-      await mcp.close();
-    } catch (err) {
-      app.log.warn({ err }, 'mcp close error');
-    }
     try {
       await app.close();
     } catch (err) {

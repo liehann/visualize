@@ -1,0 +1,96 @@
+name: Visualize dogfood
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e + visual upload
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: visualize
+          POSTGRES_PASSWORD: visualize
+          POSTGRES_DB: visualize
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U visualize -d visualize"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://visualize:visualize@localhost:5432/visualize?schema=public
+      DATA_DIR: /tmp/visualize
+      DEV_AUTH_BYPASS: 'true'
+      AUTH_SECRET: ci-dummy-auth-secret-thats-long-enough-to-pass-zod
+      AUTHENTIK_ISSUER: https://example.invalid/
+      AUTHENTIK_CLIENT_ID: ci
+      AUTHENTIK_CLIENT_SECRET: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up pnpm
+        run: corepack enable && corepack prepare pnpm@10 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm prisma generate --schema=prisma/schema.prisma
+      - run: pnpm prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Build core
+        run: pnpm --filter @visualize/core build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright
+        working-directory: apps/viewer
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        id: playwright
+        working-directory: apps/viewer
+        run: pnpm exec playwright test
+        continue-on-error: true
+
+      - name: Upload Playwright report to Visualize
+        if: always()
+        uses: liehann/visualize@main
+        with:
+          url: https://api.visualize.phloots.com
+          secret: ${{ secrets.VISUALIZE_TOKEN }}
+          project: liehann-visualize
+          project-name: 'Visualize (self)'
+          report-path: ./apps/viewer/playwright-report
+
+      - name: Surface Playwright test outcome
+        if: steps.playwright.outcome != 'success'
+        run: |
+          echo "::error::Playwright tests failed — see uploaded report in Visualize."
+          exit 1

@@ -12,6 +12,7 @@ import {
   Activity,
   Plus,
 } from 'lucide-react';
+import { AutoRefresh } from '@/components/auto-refresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
+      <AutoRefresh />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>

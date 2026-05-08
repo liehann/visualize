@@ -5,6 +5,7 @@ import { RunStatusBadge, TestStatusBadge } from '@/components/status-badge';
 import { BranchPr } from '@/components/branch-pr';
 import { formatDuration, formatRelativeTime } from '@/lib/format';
 import { ChevronRight } from 'lucide-react';
+import { AutoRefresh } from '@/components/auto-refresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,7 @@ export default async function RunPage({
 
   return (
     <div className="space-y-6">
+      {run.status === 'running' && <AutoRefresh intervalMs={5_000} />}
       <div>
         <Link
           href="/"

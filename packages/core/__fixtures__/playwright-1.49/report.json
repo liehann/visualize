@@ -1,0 +1,141 @@
+{
+  "config": {
+    "configFile": "/anon/playwright.config.ts",
+    "rootDir": "/anon/tests",
+    "version": "1.49.1"
+  },
+  "stats": {
+    "startTime": "2026-05-08T04:14:00.000Z",
+    "duration": 12345,
+    "expected": 1,
+    "unexpected": 1,
+    "flaky": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "title": "tests/sign-in.spec.ts",
+      "file": "tests/sign-in.spec.ts",
+      "specs": [
+        {
+          "title": "sign-in page screenshot",
+          "file": "tests/sign-in.spec.ts",
+          "line": 14,
+          "column": 5,
+          "ok": false,
+          "tests": [
+            {
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "unexpected",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "status": "failed",
+                  "duration": 2345,
+                  "startTime": "2026-05-08T04:14:01.000Z",
+                  "retry": 0,
+                  "errors": [
+                    {
+                      "message": "Error: A snapshot doesn't exist at sign-in.png; writing actual.",
+                      "stack": "    at /anon/tests/sign-in.spec.ts:14:23"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "attachments": [
+                    {
+                      "name": "sign-in-actual",
+                      "contentType": "image/png",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium/sign-in-actual.png"
+                    },
+                    {
+                      "name": "sign-in-expected",
+                      "contentType": "image/png",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium/sign-in-expected.png"
+                    },
+                    {
+                      "name": "sign-in-diff",
+                      "contentType": "image/png",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium/sign-in-diff.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium/trace.zip"
+                    }
+                  ]
+                },
+                {
+                  "workerIndex": 1,
+                  "status": "failed",
+                  "duration": 2100,
+                  "startTime": "2026-05-08T04:14:04.000Z",
+                  "retry": 1,
+                  "errors": [
+                    {
+                      "message": "Error: A snapshot doesn't exist at sign-in.png; writing actual."
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/anon/test-results/sign-in-screenshot-test-chromium-retry1/video.webm"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "tests/health.spec.ts",
+      "file": "tests/health.spec.ts",
+      "specs": [
+        {
+          "title": "home redirects to sign-in when unauthenticated",
+          "file": "tests/health.spec.ts",
+          "line": 6,
+          "column": 5,
+          "ok": true,
+          "tests": [
+            {
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "status": "passed",
+                  "duration": 432,
+                  "startTime": "2026-05-08T04:14:07.000Z",
+                  "retry": 0,
+                  "attachments": [
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/anon/test-results/health-check-chromium/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "data/abcdef0123456789abcdef0123456789.zip"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

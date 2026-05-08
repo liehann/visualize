@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 test('home / empty state', async ({ page }) => {
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: /projects/i }),
+    page.getByRole('heading', { name: 'Projects', exact: true, level: 1 }),
   ).toBeVisible();
   await expect(page.getByText(/no projects yet/i)).toBeVisible();
   await expect(

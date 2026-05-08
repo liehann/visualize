@@ -9,19 +9,41 @@ const Schema = z.object({
   AUTHENTIK_CLIENT_ID: z.string().min(1),
   AUTHENTIK_CLIENT_SECRET: z.string().min(1),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  // Dev-only: set to "true" to skip Authentik OIDC and inject a fake session.
-  // NEVER set in prod.
   DEV_AUTH_BYPASS: z.string().optional(),
 });
 
-export const env = Schema.parse({
-  DATABASE_URL: process.env.DATABASE_URL,
-  DATA_DIR: process.env.DATA_DIR,
-  AUTH_SECRET: process.env.AUTH_SECRET,
-  AUTH_URL: process.env.AUTH_URL,
-  AUTHENTIK_ISSUER: process.env.AUTHENTIK_ISSUER,
-  AUTHENTIK_CLIENT_ID: process.env.AUTHENTIK_CLIENT_ID,
-  AUTHENTIK_CLIENT_SECRET: process.env.AUTHENTIK_CLIENT_SECRET,
-  NODE_ENV: process.env.NODE_ENV,
-  DEV_AUTH_BYPASS: process.env.DEV_AUTH_BYPASS,
-});
+type Env = z.infer<typeof Schema>;
+
+// Skip strict validation during `next build` (the page-data collection step
+// imports route modules but has no runtime env). The values returned here
+// never execute — `next build` only inspects shapes.
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+
+function readEnv(): Env {
+  if (isBuildPhase) {
+    return {
+      DATABASE_URL: 'postgresql://build:build@build/build',
+      DATA_DIR: '/tmp',
+      AUTH_SECRET: 'build-time-placeholder-build-time-placeholder',
+      AUTH_URL: undefined,
+      AUTHENTIK_ISSUER: 'https://build.invalid/',
+      AUTHENTIK_CLIENT_ID: 'build',
+      AUTHENTIK_CLIENT_SECRET: 'build',
+      NODE_ENV: (process.env.NODE_ENV as Env['NODE_ENV']) ?? 'production',
+      DEV_AUTH_BYPASS: undefined,
+    };
+  }
+  return Schema.parse({
+    DATABASE_URL: process.env.DATABASE_URL,
+    DATA_DIR: process.env.DATA_DIR,
+    AUTH_SECRET: process.env.AUTH_SECRET,
+    AUTH_URL: process.env.AUTH_URL,
+    AUTHENTIK_ISSUER: process.env.AUTHENTIK_ISSUER,
+    AUTHENTIK_CLIENT_ID: process.env.AUTHENTIK_CLIENT_ID,
+    AUTHENTIK_CLIENT_SECRET: process.env.AUTHENTIK_CLIENT_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+    DEV_AUTH_BYPASS: process.env.DEV_AUTH_BYPASS,
+  });
+}
+
+export const env: Env = readEnv();

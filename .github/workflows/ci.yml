@@ -37,6 +37,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm prisma generate --schema=prisma/schema.prisma
 
+      - name: Build core (needed for downstream typechecks)
+        run: pnpm --filter @visualize/core build
+
       - name: Typecheck
         run: pnpm -r typecheck
 

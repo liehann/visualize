@@ -166,7 +166,8 @@ function attachmentToParsed(
   };
 }
 
-function normalizeAttachmentPath(raw: string): string {
+// Exported for unit tests.
+export function normalizeAttachmentPath(raw: string): string {
   const m = /\/(test-results|data)\/.+$/.exec(raw);
   if (m && m.index !== undefined) {
     return raw.slice(m.index + 1);

@@ -40,6 +40,11 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      - name: Test
+        # Unit tests for parser correctness and token utilities — the
+        # things that would silently corrupt run data or break CI uploads.
+        run: pnpm --filter @visualize/core test
+
       - name: Build
         # We don't need viewer's `next build` here (would require a DB
         # at build time for some pages); typecheck covers compilation.

@@ -108,17 +108,28 @@ export function SetupClient({
 
   return (
     <div className="space-y-6">
-      <Step n={1} icon={KeyRound} title="Add the upload token to GitHub Secrets">
+      <Step n={1} icon={KeyRound} title="Add a Repository secret on GitHub">
+        <p className="mb-3 text-sm text-fg-muted">
+          GitHub Actions secrets are scoped to one repo. Add this as a{' '}
+          <strong>Repository secret</strong> on{' '}
+          {githubRepo ? (
+            <code className="font-mono">{githubRepo}</code>
+          ) : (
+            <span>your repo</span>
+          )}{' '}
+          — not an environment or organization secret.
+        </p>
+
         {token ? (
           <div className="space-y-3">
             <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
               This token is shown <strong>once</strong>. Copy it now — refreshing
-              this page will hide it.
+              this page will hide it. You can regenerate later if you lose it.
             </div>
-            <Field label={`Secret name`}>
+            <Field label="Name">
               <CopyValue mono value={tokenSecretName} />
             </Field>
-            <Field label="Secret value">
+            <Field label="Secret">
               <CopyValue
                 mono
                 value={token}
@@ -140,21 +151,37 @@ export function SetupClient({
               />
             </Field>
             {secretsUrl && (
-              <div>
-                <Button asChild variant="secondary" size="sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button asChild size="sm">
                   <a href={secretsUrl} target="_blank" rel="noreferrer noopener">
-                    Open GitHub secrets page
+                    Open the New secret page on GitHub
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 </Button>
+                <span className="text-xs text-fg-subtle">
+                  Paste {tokenSecretName} as the name + the secret value above.
+                </span>
               </div>
+            )}
+            {githubRepo && (
+              <details className="rounded-md border border-dashed border-border bg-bg-panel p-3 text-xs">
+                <summary className="cursor-pointer text-fg-subtle">
+                  Prefer the GitHub CLI?
+                </summary>
+                <pre className="mt-2 overflow-x-auto rounded bg-bg p-2 font-mono leading-snug text-fg-muted">
+                  {`echo '${token}' | gh secret set ${tokenSecretName} -R ${githubRepo}`}
+                </pre>
+              </details>
             )}
           </div>
         ) : (
-          <p className="text-sm text-fg-muted">
-            Token already issued. If you've lost it, regenerate from project
-            settings (coming soon) and update your GitHub secret.
-          </p>
+          <RegenerateBlock
+            slug={slug}
+            githubRepo={githubRepo}
+            secretsUrl={secretsUrl}
+            tokenSecretName={tokenSecretName}
+            tokenLastUsedAt={tokenLastUsedAt}
+          />
         )}
       </Step>
 
@@ -241,6 +268,110 @@ export function SetupClient({
   -F 'bundle=@playwright-report.zip'`}
         </pre>
       </details>
+    </div>
+  );
+}
+
+function RegenerateBlock({
+  slug,
+  githubRepo,
+  secretsUrl,
+  tokenSecretName,
+  tokenLastUsedAt,
+}: {
+  slug: string;
+  githubRepo: string | null;
+  secretsUrl: string | null;
+  tokenSecretName: string;
+  tokenLastUsedAt: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function regenerate(): Promise<void> {
+    if (
+      !window.confirm(
+        'Regenerate the upload token? The current one will stop working immediately, and you’ll need to update the GitHub secret.',
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${slug}/regenerate-token`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        setError(`Server returned ${res.status}.`);
+        return;
+      }
+      const j = (await res.json()) as { token: string };
+      // Reload with the new token in the URL fragment so the existing
+      // first-time UI handles display.
+      window.location.replace(
+        `/projects/${slug}/setup#token=${encodeURIComponent(j.token)}`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-fg-muted">
+        A token has already been issued for this project. We don’t store the
+        plaintext (only a hash), so we can’t show it again. If you still have
+        it saved as <code className="font-mono">{tokenSecretName}</code> in{' '}
+        {githubRepo ? (
+          <a
+            href={
+              secretsUrl
+                ? `https://github.com/${githubRepo}/settings/secrets/actions`
+                : '#'
+            }
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-0.5 text-accent hover:underline"
+          >
+            {githubRepo}/settings/secrets/actions
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : (
+          <span>your repo’s secrets</span>
+        )}
+        , you’re all set. Otherwise, regenerate below.
+      </p>
+      {tokenLastUsedAt ? (
+        <p className="text-xs text-success">
+          ✓ Token last used {new Date(tokenLastUsedAt).toLocaleString()} — CI
+          is connected.
+        </p>
+      ) : (
+        <p className="text-xs text-fg-subtle">
+          The token has not been used yet — your CI hasn’t uploaded a report
+          with it.
+        </p>
+      )}
+      {error && (
+        <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {error}
+        </div>
+      )}
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={regenerate}
+        disabled={busy}
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <KeyRound className="h-3.5 w-3.5" />
+        )}
+        Regenerate token
+      </Button>
     </div>
   );
 }

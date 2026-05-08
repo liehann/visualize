@@ -204,14 +204,17 @@ function classifyKind(a: PlaywrightAttachment): AttachmentKind {
 }
 
 /**
- * Playwright's `toHaveScreenshot()` failures emit three image attachments:
- *   "<name>-actual"  "<name>-expected"  "<name>-diff"
- * Detect that triplet so the viewer can render side-by-side.
+ * Playwright's `toHaveScreenshot()` emits attachments named:
+ *   "<name>-actual"  "<name>-expected"  "<name>-diff"          (drift)
+ *   "<name>-actual.png"                                         (missing baseline)
+ * The trailing extension only appears when the baseline doesn't exist yet
+ * (Playwright's "writing actual" path). Tolerate both so the approve UI
+ * renders for first-time snapshots too.
  */
-function classifySnapshot(
-  a: PlaywrightAttachment,
+export function classifySnapshot(
+  a: Pick<PlaywrightAttachment, 'name'>,
 ): { snapshotKind?: SnapshotKind; snapshotName?: string } {
-  const m = /^(.*)-(actual|expected|diff)$/.exec(a.name);
+  const m = /^(.*)-(actual|expected|diff)(?:\.[a-z0-9]+)?$/i.exec(a.name);
   if (!m) return {};
   return {
     snapshotKind: m[2] as SnapshotKind,

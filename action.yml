@@ -76,23 +76,36 @@ runs:
           '{projectSlug:$projectSlug, projectName:($projectName|select(.!="")), branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber} | with_entries(select(.value != null and .value != ""))')
 
         echo "Posting report to ${{ inputs.url }}/runs"
+        # Capture curl's exit code separately so a network/TLS failure
+        # surfaces as a warning rather than killing the whole workflow.
+        # `set -e` would otherwise abort here before we evaluate STATUS.
+        set +e
         STATUS=$(curl -sS -o "$RUNNER_TEMP/visualize-response.json" -w '%{http_code}' \
           -X POST "${{ inputs.url }}/runs" \
           -H "Authorization: Bearer ${{ inputs.secret }}" \
           -F "meta=$META" \
           -F "bundle=@$ZIP")
+        CURL_RC=$?
+        set -e
 
-        cat "$RUNNER_TEMP/visualize-response.json"
-        echo
-        if [ "$STATUS" != "201" ] && [ "$STATUS" != "200" ]; then
-          echo "::warning::Visualize upload returned $STATUS"
+        if [ "$CURL_RC" != "0" ]; then
+          echo "::warning::Visualize upload failed at the network/TLS layer (curl exit $CURL_RC)."
           if [ "${{ inputs.fail-on-error }}" = "true" ]; then
             exit 1
           fi
         else
-          ID=$(jq -r '.id // empty' "$RUNNER_TEMP/visualize-response.json")
-          if [ -n "$ID" ]; then
-            echo "::notice title=Visualize::Run uploaded: ${{ inputs.url }}/runs/$ID"
+          cat "$RUNNER_TEMP/visualize-response.json"
+          echo
+          if [ "$STATUS" != "201" ] && [ "$STATUS" != "200" ]; then
+            echo "::warning::Visualize upload returned $STATUS"
+            if [ "${{ inputs.fail-on-error }}" = "true" ]; then
+              exit 1
+            fi
+          else
+            ID=$(jq -r '.id // empty' "$RUNNER_TEMP/visualize-response.json")
+            if [ -n "$ID" ]; then
+              echo "::notice title=Visualize::Run uploaded: ${{ inputs.url }}/runs/$ID"
+            fi
           fi
         fi
 
@@ -112,12 +125,18 @@ runs:
             --arg commitSha "${{ steps.meta.outputs.commit }}" \
             '{projectSlug:$projectSlug, name:$name, branch:$branch, commitSha:$commitSha}')
           echo "Uploading baseline: $NAME"
+          set +e
           STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
             -X POST "${{ inputs.url }}/baselines" \
             -H "Authorization: Bearer ${{ inputs.secret }}" \
             -F "meta=$META" \
             -F "image=@$png")
-          if [ "$STATUS" != "200" ]; then
+          CURL_RC=$?
+          set -e
+          if [ "$CURL_RC" != "0" ]; then
+            echo "::warning::Baseline upload for $NAME failed at the network/TLS layer (curl exit $CURL_RC)"
+            if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
+          elif [ "$STATUS" != "200" ]; then
             echo "::warning::Baseline upload for $NAME returned $STATUS"
             if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
           fi

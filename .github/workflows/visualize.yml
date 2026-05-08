@@ -88,6 +88,7 @@ jobs:
           project: liehann-visualize
           project-name: 'Visualize (self)'
           report-path: ./apps/viewer/playwright-report
+          test-results-path: ./apps/viewer/test-results
 
       - name: Surface Playwright test outcome
         if: steps.playwright.outcome != 'success'

@@ -31,14 +31,25 @@ describe('normalizeAttachmentPath', () => {
     ).toBe('test-results/spec/video.webm');
   });
 
-  it('falls back to leading-slash strip for unknown layouts', () => {
-    expect(normalizeAttachmentPath('/foo/bar/baz.png')).toBe('foo/bar/baz.png');
+  it('returns null for absolute paths with no anchor (info-leak guard)', () => {
+    // Without this guard, an unrecognized absolute path got `replace(/^\//,'')`
+    // applied and the resulting host-path was joined into the bundle URL
+    // (e.g. /api/files/runs/<id>/home/runner/work/...). That's an info leak
+    // and the file wouldn't resolve on disk anyway.
+    expect(normalizeAttachmentPath('/foo/bar/baz.png')).toBeNull();
+    expect(
+      normalizeAttachmentPath('/home/runner/work/repo/custom-out/foo.png'),
+    ).toBeNull();
+    expect(normalizeAttachmentPath('C:\\Users\\runner\\custom\\foo.png')).toBeNull();
   });
 
-  it('does not crash on relative test-results paths', () => {
+  it('keeps relative non-anchored paths as-is', () => {
     // (Pre-1.40 Playwright JSON reporter could emit these.)
     expect(normalizeAttachmentPath('test-results/foo/video.webm')).toBe(
       'test-results/foo/video.webm',
+    );
+    expect(normalizeAttachmentPath('custom/dir/file.png')).toBe(
+      'custom/dir/file.png',
     );
   });
 });

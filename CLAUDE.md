@@ -191,6 +191,18 @@ data, break the public contract, or regress UX**. Don't test trivia.
    forever. Snapshot triplet detection. Run rollup math. Zip extraction
    (zip-slip safety). These get unit tests against fixture report bundles.
 
+   **Hard rule:** every parser change must be accompanied by a test
+   against a real Playwright report fixture committed in the repo at
+   `packages/core/__fixtures__/`. Synthetic data isn't enough — Playwright
+   has versioned its JSON reporter shape and switched between absolute
+   and relative attachment paths; the only way to catch those drifts is
+   to parse a real report. If you're tempted to ship a parser change
+   without exercising a fixture, stop and add the fixture first.
+   Capture new fixtures by running `apps/viewer/tests/` locally with
+   `DEV_AUTH_BYPASS=true`, copying the resulting `playwright-report/`
+   and `test-results/` into a new fixture directory, then anonymizing
+   any host paths.
+
 3. **Visual regressions on the viewer (medium, dogfooded).** The viewer
    has its own Playwright suite that takes `toHaveScreenshot()` shots of
    every key page. Reports go to Visualize, baselines live in Visualize.

@@ -4,8 +4,9 @@ out/
 dist/
 build/
 
-# Local data store: Playwright report bundles + extracted assets
-data/
+# Local data store: Playwright report bundles + extracted assets.
+# Anchored to repo root so test fixtures named `data/` are still tracked.
+/data/
 
 # env
 .env

@@ -47,8 +47,9 @@ services:
       AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER}
       AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID}
       AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET}
-      INGEST_PUBLIC_URL: ${INGEST_PUBLIC_URL:-${SERVICE_URL_INGEST:-}}
-      VISUALIZE_REPO: ${VISUALIZE_REPO:-liehann/visualize}
+      # Surfaced in the project setup screen so users see the real ingest
+      # hostname. On Coolify, SERVICE_URL_INGEST is auto-injected; env.ts
+      # in the viewer falls back to that when INGEST_PUBLIC_URL is unset.
       PORT: 3000
     volumes:
       - visualize-data:/var/lib/visualize/data:ro

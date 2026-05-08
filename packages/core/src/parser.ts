@@ -141,10 +141,17 @@ function attachmentToParsed(
   a: PlaywrightAttachment,
   bundleRel: string,
 ): ParsedAttachment {
-  // Playwright JSON reporter emits attachments with a `path` that's already
-  // relative to the report root (e.g. "data/abcdef.png").
+  // Playwright's JSON reporter writes attachments with a `path` that may be:
+  //   1. Already-relative to the report root (e.g. "data/abcdef.png"). HTML
+  //      reporter writes these.
+  //   2. Absolute filesystem paths from the test runner's CWD, like
+  //      "/Users/runner/work/visualize/visualize/test-results/.../trace.zip".
+  //      Default JSON reporter behaviour. The action zips test-results/
+  //      into the bundle so these resolve once we strip the host prefix.
+  // Anchor on the first segment that we know exists in the bundle
+  // ("test-results/" or "data/"); fall back to stripping leading slashes.
   const storagePath = a.path
-    ? path.posix.join(bundleRel, a.path.replace(/^[\/]+/, ''))
+    ? path.posix.join(bundleRel, normalizeAttachmentPath(a.path))
     : path.posix.join(bundleRel, 'inline', `${cryptoSafe(a.name)}.bin`);
 
   const kind = classifyKind(a);
@@ -157,6 +164,14 @@ function attachmentToParsed(
     snapshotKind,
     snapshotName,
   };
+}
+
+function normalizeAttachmentPath(raw: string): string {
+  const m = /\/(test-results|data)\/.+$/.exec(raw);
+  if (m && m.index !== undefined) {
+    return raw.slice(m.index + 1);
+  }
+  return raw.replace(/^[\\/]+/, '');
 }
 
 function classifyKind(a: PlaywrightAttachment): AttachmentKind {

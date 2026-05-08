@@ -30,6 +30,13 @@ inputs:
       `./playwright-report`.
     required: false
     default: './playwright-report'
+  test-results-path:
+    description: >-
+      Path to Playwright's `test-results/` directory (videos, failure
+      screenshots, traces). Bundled alongside the report so attachment
+      paths in report.json resolve. Defaults to `./test-results`.
+    required: false
+    default: './test-results'
   baseline-path:
     description: >-
       Optional: path to a directory of golden PNGs to upload as baselines.
@@ -62,8 +69,21 @@ runs:
       run: |
         set -euo pipefail
         REPORT_DIR="${{ inputs.report-path }}"
+        # Default Playwright outputDir; can be overridden by users with a
+        # custom config but covers the 95% case. We zip both into a single
+        # bundle: report.json (from the JSON reporter) references absolute
+        # paths into test-results/, so without the latter the viewer ends
+        # up with broken video / screenshot references.
+        TEST_RESULTS_DIR="${{ inputs.test-results-path }}"
+        STAGING="$RUNNER_TEMP/visualize-bundle"
         ZIP="$RUNNER_TEMP/visualize-bundle.zip"
-        ( cd "$REPORT_DIR" && zip -rq "$ZIP" . )
+        rm -rf "$STAGING" "$ZIP"
+        mkdir -p "$STAGING"
+        cp -R "$REPORT_DIR/." "$STAGING/"
+        if [ -d "$TEST_RESULTS_DIR" ]; then
+          cp -R "$TEST_RESULTS_DIR" "$STAGING/test-results"
+        fi
+        ( cd "$STAGING" && zip -rq "$ZIP" . )
 
         META=$(jq -nc \
           --arg projectSlug "${{ inputs.project }}" \

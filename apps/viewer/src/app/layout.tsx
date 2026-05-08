@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { auth, signOut } from '@/auth';
-import { Eye, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import Link from 'next/link';
+import { Logo } from '@/components/logo';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -37,7 +38,7 @@ function TopNav({
           href="/"
           className="flex items-center gap-2 text-sm font-semibold tracking-tight"
         >
-          <Eye className="h-4 w-4 text-accent" />
+          <Logo className="h-4 w-4" />
           visualize
         </Link>
         <div className="flex items-center gap-3 text-xs text-fg-muted">

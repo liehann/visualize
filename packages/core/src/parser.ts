@@ -126,7 +126,9 @@ function resultToParsed(r: PlaywrightResult, bundleRel: string): ParsedResult {
     errorSnippet: firstError?.snippet,
     stdout,
     stderr,
-    attachments: attachments.map((a) => attachmentToParsed(a, bundleRel)),
+    attachments: attachments
+      .map((a) => attachmentToParsed(a, bundleRel))
+      .filter((x): x is ParsedAttachment => x !== null),
   };
 }
 
@@ -140,7 +142,7 @@ function joinStream(
 function attachmentToParsed(
   a: PlaywrightAttachment,
   bundleRel: string,
-): ParsedAttachment {
+): ParsedAttachment | null {
   // Playwright's JSON reporter writes attachments with a `path` that may be:
   //   1. Already-relative to the report root (e.g. "data/abcdef.png"). HTML
   //      reporter writes these.
@@ -148,10 +150,19 @@ function attachmentToParsed(
   //      "/Users/runner/work/visualize/visualize/test-results/.../trace.zip".
   //      Default JSON reporter behaviour. The action zips test-results/
   //      into the bundle so these resolve once we strip the host prefix.
-  // Anchor on the first segment that we know exists in the bundle
-  // ("test-results/" or "data/"); fall back to stripping leading slashes.
-  const storagePath = a.path
-    ? path.posix.join(bundleRel, normalizeAttachmentPath(a.path))
+  // Anchor on a segment we know exists in the bundle ("test-results/" or
+  // "data/"). For absolute paths with no anchor we drop the attachment
+  // rather than write a CI runner host path into the DB and into auth-
+  // gated URLs — that's an info leak with no upside, since the file
+  // wouldn't resolve on disk anyway.
+  let relPath: string | null = null;
+  if (a.path) {
+    relPath = normalizeAttachmentPath(a.path);
+    if (relPath === null) return null;
+  }
+
+  const storagePath = relPath
+    ? path.posix.join(bundleRel, relPath)
     : path.posix.join(bundleRel, 'inline', `${cryptoSafe(a.name)}.bin`);
 
   const kind = classifyKind(a);
@@ -166,13 +177,21 @@ function attachmentToParsed(
   };
 }
 
-// Exported for unit tests.
-export function normalizeAttachmentPath(raw: string): string {
+// Exported for unit tests. Returns null when the path looks absolute
+// (Linux `/...`, Windows `C:\...` or `C:/...`, UNC `\\...`) and we can't
+// anchor on a known bundle segment — storing the raw absolute path would
+// leak host filesystem layout into URLs.
+export function normalizeAttachmentPath(raw: string): string | null {
   const m = /\/(test-results|data)\/.+$/.exec(raw);
   if (m && m.index !== undefined) {
     return raw.slice(m.index + 1);
   }
+  if (looksAbsolute(raw)) return null;
   return raw.replace(/^[\\/]+/, '');
+}
+
+function looksAbsolute(raw: string): boolean {
+  return /^([A-Za-z]:[\\/]|[\\/])/.test(raw);
 }
 
 function classifyKind(a: PlaywrightAttachment): AttachmentKind {

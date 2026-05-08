@@ -185,13 +185,16 @@ openssl rand -hex 32   # MCP_SECRET
    AUTHENTIK_CLIENT_ID=<from step 2>
    AUTHENTIK_CLIENT_SECRET=<from step 2>
    ```
-3. **Domain mapping** (one per service):
+3. **Domain mapping** (one per service). Use **first-level** subdomains
+   only — Cloudflare's free Universal SSL doesn't cover deeper nesting,
+   so `api.visualize.<your-domain>` would need a paid plan. Namespace
+   the names so they don't collide with future apps:
 
-   | Service   | Internal port | Public hostname              |
-   |-----------|---------------|------------------------------|
-   | `viewer`  | `3000`        | `visualize.<your-domain>`    |
-   | `ingest`  | `4000`        | `ingest.visualize.<your-domain>` |
-   | `mcp`     | `5000`        | `mcp.visualize.<your-domain>` |
+   | Service   | Internal port | Public hostname                  |
+   |-----------|---------------|----------------------------------|
+   | `viewer`  | `3000`        | `visualize.<your-domain>`        |
+   | `ingest`  | `4000`        | `visualize-api.<your-domain>`    |
+   | `mcp`     | `5000`        | `visualize-mcp.<your-domain>`    |
 
 4. **Deploy**. Coolify provisions Let's Encrypt per hostname and runs the
    healthchecks defined in `docker-compose.yml`.
@@ -211,12 +214,12 @@ DATABASE_URL='postgresql://visualize:...@your-pg-host:5432/visualize?schema=publ
 
 ```bash
 # Healthchecks (no auth)
-curl -f https://ingest.visualize.<your-domain>/healthz
+curl -f https://visualize-api.<your-domain>/healthz
 curl -f https://visualize.<your-domain>/api/health
-curl -f https://mcp.visualize.<your-domain>/healthz
+curl -f https://visualize-mcp.<your-domain>/healthz
 
 # Try a bearer-protected endpoint with the wrong secret -> 401
-curl -i -X POST https://ingest.visualize.<your-domain>/runs \
+curl -i -X POST https://visualize-api.<your-domain>/runs \
   -H 'Authorization: Bearer nope'
 ```
 

@@ -83,7 +83,7 @@ jobs:
         if: always()
         uses: liehann/visualize@main
         with:
-          url: https://api.visualize.phloots.com
+          url: https://visualize-api.phloots.com
           secret: ${{ secrets.VISUALIZE_TOKEN }}
           project: liehann-visualize
           project-name: 'Visualize (self)'

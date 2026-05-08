@@ -9,12 +9,15 @@ datasource db {
 }
 
 model Project {
-  id        String     @id @default(cuid())
-  slug      String     @unique
-  name      String
-  createdAt DateTime   @default(now())
-  runs      Run[]
-  baselines Baseline[]
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  name            String
+  githubRepo      String?
+  uploadTokenHash String?
+  tokenLastUsedAt DateTime?
+  createdAt       DateTime   @default(now())
+  runs            Run[]
+  baselines       Baseline[]
 }
 
 model Run {

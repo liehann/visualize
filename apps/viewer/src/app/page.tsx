@@ -10,6 +10,7 @@ import {
   CircleAlert,
   CircleDashed,
   Activity,
+  Plus,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -35,8 +36,19 @@ export default async function HomePage() {
             project{projects.length === 1 ? '' : 's'}.
           </p>
         </div>
-        <div className="text-xs text-fg-subtle">
-          {projects.reduce((acc, p) => acc + p.runs.length, 0)} recent runs
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-fg-subtle">
+            {projects.reduce((acc, p) => acc + p.runs.length, 0)} recent runs
+          </span>
+          {projects.length > 0 && (
+            <Link
+              href="/projects/new"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border-strong bg-bg-panel px-3 text-xs font-medium hover:bg-bg-hover"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New project
+            </Link>
+          )}
         </div>
       </header>
 
@@ -232,16 +244,20 @@ function Stat({
 function EmptyState() {
   return (
     <div className="rounded-xl border border-dashed border-border bg-bg-panel p-12 text-center">
-      <h2 className="text-base font-medium">No projects yet</h2>
-      <p className="mt-1 text-sm text-fg-muted">
-        Upload a Playwright report from CI to create one.
+      <h2 className="text-lg font-medium">No projects yet</h2>
+      <p className="mx-auto mt-1.5 max-w-md text-sm text-fg-muted">
+        Connect a GitHub repo and Visualize will give you a per-project token,
+        a ready-made GitHub Action snippet, and live confirmation when your
+        first report lands.
       </p>
-      <pre className="mx-auto mt-5 inline-block rounded border border-border-strong bg-bg-hover px-4 py-3 text-left font-mono text-xs text-fg-muted">
-        {`curl -X POST https://ingest.your-domain/runs \\
-  -H "Authorization: Bearer $API_SECRET" \\
-  -F 'meta={"projectSlug":"web","branch":"main","commitSha":"$GITHUB_SHA"}' \\
-  -F 'bundle=@playwright-report.zip'`}
-      </pre>
+      <div className="mt-6">
+        <Link
+          href="/projects/new"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-5 text-sm font-medium text-accent-fg transition-colors hover:bg-accent/90"
+        >
+          Connect a GitHub repo
+        </Link>
+      </div>
     </div>
   );
 }

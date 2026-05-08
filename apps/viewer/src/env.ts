@@ -10,6 +10,12 @@ const Schema = z.object({
   AUTHENTIK_CLIENT_SECRET: z.string().min(1),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DEV_AUTH_BYPASS: z.string().optional(),
+  // Public URL of the ingest service. Surfaced in the project setup screen
+  // so users see the real hostname instead of "ingest.your-domain".
+  INGEST_PUBLIC_URL: z.string().url().optional(),
+  // GitHub repo of the deployed Visualize instance, used to populate the
+  // `uses:` line of the workflow snippet (e.g. "liehann/visualize").
+  VISUALIZE_REPO: z.string().optional(),
 });
 
 type Env = z.infer<typeof Schema>;
@@ -31,6 +37,8 @@ function readEnv(): Env {
       AUTHENTIK_CLIENT_SECRET: 'build',
       NODE_ENV: (process.env.NODE_ENV as Env['NODE_ENV']) ?? 'production',
       DEV_AUTH_BYPASS: undefined,
+      INGEST_PUBLIC_URL: undefined,
+      VISUALIZE_REPO: undefined,
     };
   }
   return Schema.parse({
@@ -43,6 +51,9 @@ function readEnv(): Env {
     AUTHENTIK_CLIENT_SECRET: process.env.AUTHENTIK_CLIENT_SECRET,
     NODE_ENV: process.env.NODE_ENV,
     DEV_AUTH_BYPASS: process.env.DEV_AUTH_BYPASS,
+    INGEST_PUBLIC_URL:
+      process.env.INGEST_PUBLIC_URL ?? process.env.SERVICE_URL_INGEST,
+    VISUALIZE_REPO: process.env.VISUALIZE_REPO,
   });
 }
 

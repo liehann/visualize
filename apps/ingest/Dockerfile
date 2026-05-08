@@ -48,4 +48,8 @@ WORKDIR /app/apps/ingest
 
 EXPOSE 4000
 
-CMD ["node", "dist/server.js"]
+# Run pending Prisma migrations before starting the server. The ingest
+# service owns DB schema lifecycle — the viewer/mcp pods start later and
+# expect the schema to exist. Single-replica today; if this ever scales
+# out, wrap with a pg advisory lock.
+CMD ["sh", "-c", "node /app/node_modules/prisma/build/index.js migrate deploy --schema=/app/prisma/schema.prisma && exec node dist/server.js"]

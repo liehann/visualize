@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAttachmentPath, rollupRun } from './parser.js';
+import { classifySnapshot, normalizeAttachmentPath, rollupRun } from './parser.js';
 import type { ParsedSpec } from './parser.js';
 
 describe('normalizeAttachmentPath', () => {
@@ -51,6 +51,49 @@ describe('normalizeAttachmentPath', () => {
     expect(normalizeAttachmentPath('custom/dir/file.png')).toBe(
       'custom/dir/file.png',
     );
+  });
+});
+
+describe('classifySnapshot', () => {
+  it('classifies the drift triplet (no extension)', () => {
+    expect(classifySnapshot({ name: 'sign-in-actual' })).toEqual({
+      snapshotKind: 'actual',
+      snapshotName: 'sign-in',
+    });
+    expect(classifySnapshot({ name: 'sign-in-expected' })).toEqual({
+      snapshotKind: 'expected',
+      snapshotName: 'sign-in',
+    });
+    expect(classifySnapshot({ name: 'sign-in-diff' })).toEqual({
+      snapshotKind: 'diff',
+      snapshotName: 'sign-in',
+    });
+  });
+
+  it('classifies missing-baseline actuals (with .png extension)', () => {
+    // Playwright emits "<name>-actual.png" the first time a snapshot test
+    // runs without a baseline ("A snapshot doesn't exist at ..., writing
+    // actual."). Without classifying these as snapshots, the viewer's
+    // approve UI never renders for first-time snapshots — you'd have to
+    // seed the baseline with `playwright --update-snapshots` and commit.
+    expect(classifySnapshot({ name: 'new-project-actual.png' })).toEqual({
+      snapshotKind: 'actual',
+      snapshotName: 'new-project',
+    });
+  });
+
+  it('preserves the snapshot name through hyphens', () => {
+    expect(classifySnapshot({ name: 'home-empty-state-diff' })).toEqual({
+      snapshotKind: 'diff',
+      snapshotName: 'home-empty-state',
+    });
+  });
+
+  it('does not match unrelated attachments', () => {
+    expect(classifySnapshot({ name: 'screenshot' })).toEqual({});
+    expect(classifySnapshot({ name: 'video' })).toEqual({});
+    expect(classifySnapshot({ name: 'trace' })).toEqual({});
+    expect(classifySnapshot({ name: 'error-context' })).toEqual({});
   });
 });
 

@@ -6,6 +6,8 @@ import { BranchPr } from '@/components/branch-pr';
 import { formatDuration, formatRelativeTime } from '@/lib/format';
 import { ChevronRight } from 'lucide-react';
 import { AutoRefresh } from '@/components/auto-refresh';
+import { BulkApprove, type PendingDiff } from '@/components/bulk-approve';
+import { attachmentSrc } from '@/lib/attachment-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +27,8 @@ export default async function RunPage({
     },
   });
   if (!run) notFound();
+
+  const pendingDiffs = await loadPendingDiffs(runId, run.projectId);
 
   const failedFirst = [...run.tests].sort((a, b) => {
     const order = (s: string) =>
@@ -74,6 +78,8 @@ export default async function RunPage({
 
       <Summary run={run} />
 
+      <BulkApprove runId={run.id} pending={pendingDiffs} />
+
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-bg-panel">
         {failedFirst.map((t) => (
           <li key={t.id}>
@@ -102,6 +108,86 @@ export default async function RunPage({
       </ul>
     </div>
   );
+}
+
+async function loadPendingDiffs(
+  runId: string,
+  projectId: string,
+): Promise<PendingDiff[]> {
+  const actuals = await prisma.attachment.findMany({
+    where: {
+      snapshotKind: 'actual',
+      testResult: { testCase: { runId } },
+    },
+    include: {
+      testResult: { include: { testCase: true } },
+    },
+  });
+  const diffNames = new Set(
+    (
+      await prisma.attachment.findMany({
+        where: {
+          snapshotKind: 'diff',
+          testResult: { testCase: { runId } },
+        },
+        select: { snapshotName: true, testResult: { select: { testCaseId: true } } },
+      })
+    )
+      .map((a) => `${a.testResult.testCaseId}::${a.snapshotName}`)
+      .filter((s) => !s.endsWith('::null')),
+  );
+  const diffByKey = new Map<string, { src: string; percent?: number }>();
+  const diffAttachments = await prisma.attachment.findMany({
+    where: {
+      snapshotKind: 'diff',
+      testResult: { testCase: { runId } },
+    },
+    include: { testResult: true },
+  });
+  for (const d of diffAttachments) {
+    if (!d.snapshotName) continue;
+    diffByKey.set(`${d.testResult.testCaseId}::${d.snapshotName}`, {
+      src: attachmentSrc(d.storagePath),
+      percent: d.diffPercent ?? undefined,
+    });
+  }
+
+  const approvedFromIds = new Set(
+    (
+      await prisma.baseline.findMany({
+        where: {
+          projectId,
+          approvedFromAttachmentId: { in: actuals.map((a) => a.id) },
+        },
+        select: { approvedFromAttachmentId: true },
+      })
+    )
+      .map((b) => b.approvedFromAttachmentId)
+      .filter((id): id is string => !!id),
+  );
+
+  return actuals
+    .filter((a) => {
+      if (!a.snapshotName) return false;
+      const key = `${a.testResult.testCaseId}::${a.snapshotName}`;
+      return diffNames.has(key) && !approvedFromIds.has(a.id);
+    })
+    .map((a) => {
+      const tc = a.testResult.testCase;
+      const key = `${a.testResult.testCaseId}::${a.snapshotName}`;
+      const d = diffByKey.get(key);
+      return {
+        attachmentId: a.id,
+        snapshotName: a.snapshotName ?? '',
+        testTitle: tc.titlePath,
+        testId: tc.id,
+        actualSrc: attachmentSrc(a.storagePath),
+        diffSrc: d?.src,
+        diffPercent: d?.percent,
+      };
+    })
+    // Highest-impact first so a sweep's heaviest changes are at the top.
+    .sort((a, b) => (b.diffPercent ?? 0) - (a.diffPercent ?? 0));
 }
 
 function Summary({

@@ -83,16 +83,32 @@ One block in your workflow:
 - uses: liehann/visualize@main
   if: always()
   with:
-    url: ${{ vars.VISUALIZE_URL }}            # e.g. https://ingest.visualize.example.com
+    url: ${{ vars.VISUALIZE_URL }}            # ingest, e.g. https://visualize-api.example.com
+    viewer-url: ${{ vars.VISUALIZE_VIEWER_URL }}  # web, e.g. https://visualize.example.com
     secret: ${{ secrets.VISUALIZE_API_SECRET }}
     project: my-app
     # baseline-path: ./tests/__snapshots__    # optional
 ```
 
+> Workflow needs `permissions: { pull-requests: write, statuses: write }`
+> for the PR comment + commit status to work with the default
+> `${{ github.token }}`. Pass a different `github-token` for fork PRs.
+
 The action auto-detects branch, PR number, commit, and CI run URL from
 the GitHub Actions context. Bundles `./playwright-report/` (or whatever
 `report-path` points at), POSTs to `<url>/runs`. Adds an annotation to
 the workflow with a link to the new run.
+
+When `viewer-url` is set and the workflow runs on a PR, the action
+upserts a sticky PR comment with the run summary, total counts, and a
+deep-link to the viewer — no need to chase down the URL by hand. Set
+`comment-on-pr: false` to disable.
+
+The action also sets a `visualize/visual-diffs` commit status:
+**pending** when the run has unreviewed visual diffs (which blocks
+merge under branch protection — humans must approve via the viewer
+before the next CI run flips it to **success**), or **success** when
+there were no visual changes. Set `set-status-check: false` to disable.
 
 Don't want the upload to ever fail your CI? Default `fail-on-error: false`
 means a Visualize hiccup is a warning, not a workflow failure.

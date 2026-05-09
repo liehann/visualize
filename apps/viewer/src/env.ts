@@ -16,6 +16,17 @@ const Schema = z.object({
   // GitHub repo of the deployed Visualize instance, used to populate the
   // `uses:` line of the workflow snippet (e.g. "liehann/visualize").
   VISUALIZE_REPO: z.string().optional(),
+  // PAT or GitHub App token with `repo:status` scope on the consumer
+  // repos. When set, /api/approve flips the `visualize/visual-diffs`
+  // commit status to `success` once a run has zero unapproved diffs,
+  // so branch protection releases without waiting for the next CI run.
+  // Optional — without it, approval still works; merge gate just waits
+  // for CI re-run.
+  VIEWER_GITHUB_TOKEN: z.string().optional(),
+  // Public URL of the viewer itself, used as the `target_url` of any
+  // status updates the viewer posts to GitHub (so reviewers click
+  // through to the run we just approved against).
+  VIEWER_URL: z.string().url().optional(),
 });
 
 type Env = z.infer<typeof Schema>;
@@ -39,6 +50,8 @@ function readEnv(): Env {
       DEV_AUTH_BYPASS: undefined,
       INGEST_PUBLIC_URL: undefined,
       VISUALIZE_REPO: undefined,
+      VIEWER_GITHUB_TOKEN: undefined,
+      VIEWER_URL: undefined,
     };
   }
   return Schema.parse({
@@ -54,6 +67,8 @@ function readEnv(): Env {
     INGEST_PUBLIC_URL:
       process.env.INGEST_PUBLIC_URL ?? process.env.SERVICE_URL_INGEST,
     VISUALIZE_REPO: process.env.VISUALIZE_REPO,
+    VIEWER_GITHUB_TOKEN: process.env.VIEWER_GITHUB_TOKEN,
+    VIEWER_URL: process.env.VIEWER_URL,
   });
 }
 

@@ -72,6 +72,37 @@ inputs:
       fails. Defaults to false so a flaky Visualize doesn't block CI.
     required: false
     default: 'false'
+  viewer-url:
+    description: >-
+      Public URL of the Visualize viewer (e.g. https://visualize.example.com).
+      When set together with `comment-on-pr: true`, the action upserts a
+      sticky PR comment with the run summary and a deep-link.
+    required: false
+  comment-on-pr:
+    description: >-
+      Whether to upsert a sticky PR comment summarizing the run. Requires
+      `viewer-url` and a `github-token` with `pull-requests: write` (the
+      default `${{ github.token }}` works for PRs from the same repo when
+      the workflow grants the permission).
+    required: false
+    default: 'true'
+  set-status-check:
+    description: >-
+      Whether to post a `visualize/visual-diffs` commit status. The check
+      is `pending` when there are unreviewed diffs (blocks merge under
+      branch protection) and `success` when the run had no visual changes.
+      Requires `viewer-url` (so the check can deep-link to the run) and a
+      `github-token` with `statuses: write`.
+    required: false
+    default: 'true'
+  github-token:
+    description: >-
+      Token used to post the PR comment. Defaults to `${{ github.token }}`.
+      For PRs from forks the default token is read-only — provide a
+      separate token (or run the comment step from a `pull_request_target`
+      workflow) to enable comments there.
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: 'composite'
@@ -145,6 +176,7 @@ runs:
         done
 
     - name: Upload Playwright report
+      id: upload
       if: inputs.mode == 'upload-report' && hashFiles(format('{0}/report.json', inputs.report-path)) != ''
       shell: bash
       run: |
@@ -207,6 +239,14 @@ runs:
             ID=$(jq -r '.id // empty' "$RUNNER_TEMP/visualize-response.json")
             if [ -n "$ID" ]; then
               echo "::notice title=Visualize::Run uploaded: ${{ inputs.url }}/runs/$ID"
+              echo "run_id=$ID" >> "$GITHUB_OUTPUT"
+              echo "run_status=$(jq -r '.status // \"\"' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "total=$(jq -r '.totals.total // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "passed=$(jq -r '.totals.passed // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "failed=$(jq -r '.totals.failed // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "flaky=$(jq -r '.totals.flaky // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "skipped=$(jq -r '.totals.skipped // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
+              echo "diffs=$(jq -r '.diffs // 0' "$RUNNER_TEMP/visualize-response.json")" >> "$GITHUB_OUTPUT"
             fi
           fi
         fi
@@ -252,3 +292,119 @@ runs:
             if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
           fi
         done
+
+    - name: Post PR comment
+      if: >-
+        inputs.mode == 'upload-report' &&
+        inputs.comment-on-pr == 'true' &&
+        inputs.viewer-url != '' &&
+        steps.meta.outputs.pr != '' &&
+        steps.upload.outputs.run_id != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        SLUG='${{ inputs.project }}'
+        NAME='${{ inputs.project-name }}'
+        [ -z "$NAME" ] && NAME="$SLUG"
+        VIEWER='${{ inputs.viewer-url }}'
+        VIEWER="${VIEWER%/}"
+        RUN_ID='${{ steps.upload.outputs.run_id }}'
+        RUN_STATUS='${{ steps.upload.outputs.run_status }}'
+        PASSED='${{ steps.upload.outputs.passed }}'
+        FAILED='${{ steps.upload.outputs.failed }}'
+        FLAKY='${{ steps.upload.outputs.flaky }}'
+        SKIPPED='${{ steps.upload.outputs.skipped }}'
+        TOTAL='${{ steps.upload.outputs.total }}'
+        DIFFS='${{ steps.upload.outputs.diffs }}'
+        BRANCH='${{ steps.meta.outputs.branch }}'
+        COMMIT='${{ steps.meta.outputs.commit }}'
+        SHORT_SHA="${COMMIT:0:7}"
+        PR='${{ steps.meta.outputs.pr }}'
+        REPO='${{ github.repository }}'
+        SERVER='${{ github.server_url }}'
+
+        case "$RUN_STATUS" in
+          passed)        BADGE='✅ **passed**' ;;
+          failed)        BADGE='❌ **failed**' ;;
+          flaky)         BADGE='🟡 **flaky**' ;;
+          skipped|*)     BADGE="⚪ **${RUN_STATUS:-unknown}**" ;;
+        esac
+
+        DIFFS_LINE=""
+        if [ "${DIFFS:-0}" -gt 0 ]; then
+          PLURAL=""
+          [ "$DIFFS" -ne 1 ] && PLURAL="s"
+          DIFFS_LINE=$(printf '\n> 👁 **%s visual change%s detected** — review and approve at %s/runs/%s\n' "$DIFFS" "$PLURAL" "$VIEWER" "$RUN_ID")
+        fi
+
+        MARKER="<!-- visualize-pr-comment:${SLUG} -->"
+        BODY=$(printf '%s\n<!-- visualize commit:%s run:%s -->\n\n### 👁 Visualize · %s\n\n%s\n\n| ✓ passed | ✗ failed | 🟡 flaky | ⏭ skipped | total |\n| --- | --- | --- | --- | --- |\n| %s | %s | %s | %s | %s |\n%s\n[**View run →**](%s/runs/%s) · [`%s`](%s/%s/commit/%s) · branch `%s`\n' \
+          "$MARKER" \
+          "$COMMIT" "$RUN_ID" \
+          "$NAME" \
+          "$BADGE" \
+          "$PASSED" "$FAILED" "$FLAKY" "$SKIPPED" "$TOTAL" \
+          "$DIFFS_LINE" \
+          "$VIEWER" "$RUN_ID" \
+          "$SHORT_SHA" "$SERVER" "$REPO" "$COMMIT" \
+          "$BRANCH")
+
+        # Find existing sticky comment by marker.
+        EXISTING=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1 || true)
+
+        if [ -n "$EXISTING" ]; then
+          echo "::notice title=Visualize::Updating PR comment $EXISTING"
+          gh api -X PATCH "repos/$REPO/issues/comments/$EXISTING" -f body="$BODY" >/dev/null
+        else
+          echo "::notice title=Visualize::Creating PR comment on #$PR"
+          gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$BODY" >/dev/null
+        fi
+
+    - name: Set commit status for visual diffs
+      if: >-
+        inputs.mode == 'upload-report' &&
+        inputs.set-status-check == 'true' &&
+        inputs.viewer-url != '' &&
+        steps.upload.outputs.run_id != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        VIEWER='${{ inputs.viewer-url }}'
+        VIEWER="${VIEWER%/}"
+        RUN_ID='${{ steps.upload.outputs.run_id }}'
+        DIFFS='${{ steps.upload.outputs.diffs }}'
+        COMMIT='${{ steps.meta.outputs.commit }}'
+        REPO='${{ github.repository }}'
+        # The check is set on the PR's head commit (which is what GITHUB_SHA
+        # is for pull_request workflows), so branch protection sees it on
+        # the right ref.
+        if [ "${DIFFS:-0}" -gt 0 ]; then
+          STATE="pending"
+          PLURAL=""
+          [ "$DIFFS" -ne 1 ] && PLURAL="s"
+          DESC="$DIFFS visual change$PLURAL pending review"
+        else
+          STATE="success"
+          DESC="No unreviewed visual diffs"
+        fi
+        echo "::notice title=Visualize::status=$STATE ($DESC) on $COMMIT"
+        # Fail-soft: a token without statuses:write (e.g. fork PR with
+        # default token) shouldn't break the workflow. Suppress non-2xx
+        # exits but log them.
+        set +e
+        gh api -X POST "repos/$REPO/statuses/$COMMIT" \
+          -f state="$STATE" \
+          -f context="visualize/visual-diffs" \
+          -f description="$DESC" \
+          -f target_url="$VIEWER/runs/$RUN_ID" >/dev/null
+        RC=$?
+        set -e
+        if [ "$RC" != "0" ]; then
+          echo "::warning::Failed to set commit status (rc=$RC). The token may lack statuses:write — this is expected on fork PRs with the default GITHUB_TOKEN."
+          if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
+        fi

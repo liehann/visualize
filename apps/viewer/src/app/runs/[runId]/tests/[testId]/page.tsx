@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { TestStatusBadge } from '@/components/status-badge';
-import { SnapshotDiff, type SnapshotTriplet } from '@/components/snapshot-diff';
+import { type SnapshotTriplet } from '@/components/snapshot-diff';
+import { DiffGallery } from '@/components/diff-gallery';
 import { AttachmentViewer } from '@/components/attachment-viewer';
 import { BranchPr } from '@/components/branch-pr';
 import { formatDuration } from '@/lib/format';
@@ -105,9 +106,7 @@ export default async function TestPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
             Visual diffs
           </h2>
-          {triplets.map((t) => (
-            <SnapshotDiff key={t.snapshotName} triplet={t} />
-          ))}
+          <DiffGallery triplets={triplets} />
         </section>
       )}
 
@@ -201,7 +200,11 @@ function groupSnapshotTriplets(attachments: Attachment[]): SnapshotTriplet[] {
     const slot = { id: a.id, src: attachmentSrc(a.storagePath) };
     if (a.snapshotKind === 'actual') entry.actual = slot;
     if (a.snapshotKind === 'expected') entry.expected = slot;
-    if (a.snapshotKind === 'diff') entry.diff = slot;
+    if (a.snapshotKind === 'diff') {
+      entry.diff = slot;
+      if (a.diffPercent !== null) entry.diffPercent = a.diffPercent;
+      if (a.diffPixels !== null) entry.diffPixels = a.diffPixels;
+    }
   }
   return [...map.values()];
 }

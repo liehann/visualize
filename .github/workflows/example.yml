@@ -10,6 +10,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # PR comment upsert
+      statuses: write        # `visualize/visual-diffs` commit status
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +32,8 @@ jobs:
         if: always()
         uses: liehann/visualize@main
         with:
-          url: ${{ vars.VISUALIZE_URL }}
+          url: ${{ vars.VISUALIZE_URL }}                # ingest URL
+          viewer-url: ${{ vars.VISUALIZE_VIEWER_URL }}  # web URL — deep-linked in the PR comment
           secret: ${{ secrets.VISUALIZE_API_SECRET }}
           project: phloots-web
           # Optional: also push goldens from this commit so others can rebase

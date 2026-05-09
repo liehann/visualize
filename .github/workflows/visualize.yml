@@ -13,6 +13,11 @@ jobs:
   e2e:
     name: e2e + visual upload
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # PR comment upsert
+      statuses: write        # `visualize/visual-diffs` commit status
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -84,6 +89,7 @@ jobs:
         uses: liehann/visualize@main
         with:
           url: https://visualize-api.phloots.com
+          viewer-url: https://visualize.phloots.com
           secret: ${{ secrets.VISUALIZE_TOKEN }}
           project: liehann-visualize
           project-name: 'Visualize (self)'

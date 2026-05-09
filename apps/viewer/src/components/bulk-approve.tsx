@@ -1,0 +1,213 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { Check, Loader2, X, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+function BulkDiffBadge({ percent }: { percent: number }) {
+  const tone =
+    percent >= 10
+      ? 'border-danger/40 bg-danger/10 text-danger'
+      : percent >= 1
+        ? 'border-warn/40 bg-warn/10 text-warn'
+        : 'border-fg-subtle/30 bg-fg-subtle/10 text-fg-subtle';
+  const display =
+    percent >= 1 ? percent.toFixed(1) : percent >= 0.01 ? percent.toFixed(2) : '<0.01';
+  return (
+    <span
+      className={cn(
+        'inline-flex h-4 shrink-0 items-center rounded border px-1 font-mono text-[10px]',
+        tone,
+      )}
+      title={`${percent.toFixed(4)}% of pixels differ`}
+    >
+      {display}%
+    </span>
+  );
+}
+
+export type PendingDiff = {
+  attachmentId: string;
+  snapshotName: string;
+  testTitle: string;
+  testId: string;
+  actualSrc: string;
+  diffSrc?: string;
+  diffPercent?: number;
+};
+
+type Props = {
+  runId: string;
+  pending: PendingDiff[];
+};
+
+export function BulkApprove({ runId, pending }: Props) {
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<
+    | { ok: number; failed: { name: string; error: string }[] }
+    | null
+  >(null);
+  const [pendingFetch, start] = useTransition();
+  const router = useRouter();
+
+  if (pending.length === 0) return null;
+
+  const onConfirm = () => {
+    setResults(null);
+    start(async () => {
+      const res = await fetch(`/api/approve/run/${runId}`, { method: 'POST' });
+      if (!res.ok) {
+        setResults({
+          ok: 0,
+          failed: [{ name: '(request)', error: `bulk approve failed (${res.status})` }],
+        });
+        return;
+      }
+      const body = (await res.json()) as {
+        approved: number;
+        results: { snapshotName: string; ok: boolean; error?: string }[];
+      };
+      const failed = body.results
+        .filter((r) => !r.ok)
+        .map((r) => ({ name: r.snapshotName, error: r.error ?? 'unknown' }));
+      setResults({ ok: body.approved, failed });
+      router.refresh();
+      if (failed.length === 0) {
+        setTimeout(() => setOpen(false), 800);
+      }
+    });
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-warn/30 bg-warn/5 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-fg">
+            <AlertTriangle className="h-4 w-4 text-warn" />
+            {pending.length} visual change{pending.length === 1 ? '' : 's'} pending review
+          </div>
+          <div className="mt-0.5 text-xs text-fg-subtle">
+            Review individually or approve them all in one shot.
+          </div>
+        </div>
+        <Button variant="success" size="sm" onClick={() => setOpen(true)}>
+          <Check className="h-3.5 w-3.5" />
+          approve all {pending.length}
+        </Button>
+      </div>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur"
+          onClick={() => !pendingFetch && setOpen(false)}
+        >
+          <div
+            className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-bg-panel shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-border px-5 py-3">
+              <div>
+                <h2 className="text-base font-semibold text-fg">
+                  Approve {pending.length} visual change{pending.length === 1 ? '' : 's'}
+                </h2>
+                <p className="mt-0.5 text-xs text-fg-subtle">
+                  Each &ldquo;actual&rdquo; image becomes the new baseline. The next CI run
+                  diffs against these.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setOpen(false)}
+                disabled={pendingFetch}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </header>
+
+            <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+              {pending.map((p) => {
+                const failure = results?.failed.find((f) => f.name === p.snapshotName);
+                const succeeded =
+                  results !== null &&
+                  !results.failed.some((f) => f.name === p.snapshotName);
+                return (
+                  <li
+                    key={p.attachmentId}
+                    className="flex items-start gap-3 px-5 py-3 text-xs"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.actualSrc}
+                      alt={p.snapshotName}
+                      className="h-14 w-20 shrink-0 rounded border border-border object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-mono text-[12px] text-fg">
+                          {p.snapshotName}
+                        </span>
+                        {p.diffPercent !== undefined && (
+                          <BulkDiffBadge percent={p.diffPercent} />
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate text-fg-subtle">
+                        {p.testTitle}
+                      </div>
+                      {failure && (
+                        <div className="mt-1 truncate text-danger">{failure.error}</div>
+                      )}
+                    </div>
+                    {results === null ? (
+                      <span className="text-fg-subtle">pending</span>
+                    ) : failure ? (
+                      <span className="font-medium text-danger">failed</span>
+                    ) : succeeded ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-success">
+                        <Check className="h-3 w-3" /> approved
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <footer className="flex items-center justify-between gap-3 border-t border-border bg-bg-hover/40 px-5 py-3">
+              <div className="text-xs text-fg-subtle">
+                {results
+                  ? `${results.ok} approved · ${results.failed.length} failed`
+                  : `${pending.length} ready`}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setOpen(false)}
+                  disabled={pendingFetch}
+                >
+                  cancel
+                </Button>
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={onConfirm}
+                  disabled={pendingFetch}
+                >
+                  {pendingFetch ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  approve all
+                </Button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

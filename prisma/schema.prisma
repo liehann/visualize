@@ -147,6 +147,14 @@ model Attachment {
   // the new baseline at the right location.
   snapshotPath String?
 
+  // Pixel-level diff metric, computed at ingest with pixelmatch on the
+  // sibling expected + actual images and stamped on the diff attachment.
+  // Null on non-diff rows (and on diff rows from runs uploaded before this
+  // column existed). Lets the viewer surface a "12.4% changed" badge and
+  // sort by impact.
+  diffPixels   Int?
+  diffPercent  Float?
+
   annotations  Annotation[]
 
   @@index([testResultId])

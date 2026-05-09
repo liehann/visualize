@@ -8,6 +8,14 @@ build/
 # Anchored to repo root so test fixtures named `data/` are still tracked.
 /data/
 
+# Local Playwright outputs from `pnpm --filter @visualize/viewer test`.
+# Committed copies live under `screenshots/` once they're approved.
+/apps/viewer/playwright-report/
+/apps/viewer/test-results/
+
+# Local Claude Code agent state.
+/.claude/
+
 # env
 .env
 .env.local

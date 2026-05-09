@@ -10,6 +10,7 @@ import { flattenSpecs, loadReport, rollupRun } from '@visualize/core/parser';
 import { RunUploadMetadataSchema } from '@visualize/core/types';
 import type { Prisma } from '@prisma/client';
 import { authorizeProjectUpload } from '../auth.js';
+import { computeDiffMetricsForRun } from '../diff_metrics.js';
 
 type RunMeta = ReturnType<typeof RunUploadMetadataSchema.parse>;
 
@@ -221,6 +222,34 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
       // 4. Cleanup temp upload.
       await fs.unlink(bundleTmpPath).catch(() => undefined);
 
+      // 5. Compute pixelmatch metrics on every snapshot triplet that has
+      //    expected + actual on disk. Failures here are non-fatal — the
+      //    run is already persisted; the metrics are best-effort triage
+      //    metadata.
+      try {
+        const stats = await computeDiffMetricsForRun(created.id);
+        if (stats.skipped > 0) {
+          req.log.warn(
+            { runId: created.id, ...stats },
+            'pixelmatch skipped some triplets (corrupt or unreadable PNG)',
+          );
+        }
+      } catch (err) {
+        req.log.warn({ runId: created.id, err }, 'computeDiffMetricsForRun failed');
+      }
+
+      // Count visual diffs (snapshotKind=diff) — Playwright only writes a
+      // diff PNG when the screenshot actually changed, so this is a tight
+      // proxy for "how many visual regressions need review".
+      let diffs = 0;
+      for (const spec of specs) {
+        for (const result of spec.results) {
+          for (const att of result.attachments) {
+            if (att.snapshotKind === 'diff') diffs += 1;
+          }
+        }
+      }
+
       reply.code(201);
       return {
         id: created.id,
@@ -233,6 +262,7 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
           flaky: created.flakyTests,
           skipped: created.skippedTests,
         },
+        diffs,
       };
     } catch (err) {
       // Cleanup partial extract + temp zip on failure.

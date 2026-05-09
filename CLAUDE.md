@@ -379,24 +379,73 @@ CLI + docs:
   and commits screenshots under `screenshots/` as artifacts visible on
   GitHub.
 
+### Done (session 3, 2026-05-08) — the PR loop
+
+The theme of this session: tighten the **PR feedback loop** so daily devs
+on kuruvu_track / tizipop / dinners get pulled into Visualize instead of
+having to remember it exists.
+
+- **Lightbox** (`apps/viewer/src/components/diff-lightbox.tsx`,
+  `diff-gallery.tsx`). Click any expected/actual/diff image → full-screen
+  view with four modes: side, **drag-to-compare slider**, mix-blend onion
+  overlay, dedicated diff. Wheel-to-zoom, drag-to-pan, double-click to
+  reset, keyboard shortcuts (← → A 1 2 3 4 Esc) for zero-mouse triage.
+- **Bulk approve in run** (`apps/viewer/src/components/bulk-approve.tsx`,
+  `apps/viewer/src/app/api/approve/run/[runId]/route.ts`). Run page
+  shows a "N visual changes pending" banner; clicking opens a sheet
+  listing every pending diff with thumbnails and approves them all in
+  one POST. Per-attachment approve logic factored to `lib/approve.ts`
+  so the single + bulk paths share a single source of truth. List is
+  sorted by impact (heaviest diffs first).
+- **PR comment via the GitHub Action** (`action.yml`). When `viewer-url`
+  is set and the workflow runs on a PR, the action upserts a sticky
+  comment with the run's pass/fail/flaky/skipped counts, a deep-link to
+  the viewer, and a callout when there are unreviewed visual diffs.
+  Marker-based upsert keeps a single comment per project so the PR
+  doesn't get spammed across re-runs.
+- **GitHub commit status** (`action.yml`). Same step suite posts a
+  `visualize/visual-diffs` status: `pending` (with target_url to the
+  viewer) when diffs need review — branch protection then blocks merge
+  — and `success` when there were no visual changes. Fail-soft on
+  `statuses: write` denial (e.g. fork PRs with default token).
+- **Smart diff metrics.** Ingest now runs `pixelmatch` on every
+  expected/actual pair (`apps/ingest/src/diff_metrics.ts`) and stamps
+  `diffPixels` + `diffPercent` on the diff Attachment. Schema migration
+  `20260508140000_attachment_diff_metrics` is additive (nullable). The
+  viewer renders a **color-coded `12.4%` badge** in the gallery, the
+  lightbox header, and the bulk-approve sheet — red ≥10%, amber ≥1%,
+  subtle <1% (so reviewers can ignore antialiasing-grade noise at a
+  glance). Mismatched dimensions get a 100% badge so they're not
+  silently skipped.
+- **Auto-flip GitHub status on approve** (`apps/viewer/src/lib/diff-status.ts`).
+  When `VIEWER_GITHUB_TOKEN` is set and a project has `githubRepo`, the
+  approve API (single + bulk) re-evaluates remaining unapproved diffs
+  in the run after each approval and posts a fresh
+  `visualize/visual-diffs` commit status. Closes the merge gate
+  immediately on full approval — no need to push or re-run CI just to
+  flip the check. Best-effort: silent no-op without the token, logs
+  but doesn't fail on non-2xx (the approval itself has already
+  succeeded). Adds `VIEWER_GITHUB_TOKEN` and `VIEWER_URL` to viewer env.
+- **Design lab.** Two demo pages (`/demo/lightbox`, `/demo/bulk-approve`)
+  render fixture data with no DB, so future Claude sessions can iterate
+  on UI components without booting Postgres. Verifier scripts at
+  `scripts/verify-lightbox.ts` and `scripts/verify-bulk-approve.ts`
+  drive Playwright through every interaction state and dump screenshots
+  to `screenshots/` for review.
+
 ### What still wants doing (Claude prioritizes; stakeholder may redirect)
 
-1. **Lightbox + zoom** on screenshots. Click any image → full-screen
-   with pinch-zoom and an actual↔expected slider. Requested by the
-   stakeholder when they said "lightboxes where appropriate."
-2. **Bulk approve in run** — "Approve all 7 diffs in this run" so a
-   sweep doesn't require N clicks.
-3. **Embedded Playwright trace viewer.** Playwright ships `show-trace`
+1. **Embedded Playwright trace viewer.** Playwright ships `show-trace`
    as static HTML that can be served against our storage. Today the
    viewer just offers Download.
-4. **Annotation drawing UI.** Data model and MCP write path both work;
+2. **Annotation drawing UI.** Data model and MCP write path both work;
    the human-facing draw-on-screenshot UI is roadmap.
-5. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
+3. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
    only changed tests with the diffs side by side.
-6. **Retention / GC.** Videos eat disk fast — auto-delete runs older
+4. **Retention / GC.** Videos eat disk fast — auto-delete runs older
    than N days per project.
-7. **Slack/webhook notifications** on failure or approval.
-8. **Smoke / round-trip test in CI** — the verification I just did
+5. **Slack/webhook notifications** on failure or approval.
+6. **Smoke / round-trip test in CI** — the verification I just did
    manually should be a job that boots the stack with docker-compose
    and asserts the upload pipeline still works on every PR.
 

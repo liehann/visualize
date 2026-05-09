@@ -4,8 +4,7 @@ import { prisma } from '@/lib/db';
 import { RunStatusBadge } from '@/components/status-badge';
 import { BranchPr } from '@/components/branch-pr';
 import { formatRelativeTime } from '@/lib/format';
-import { attachmentSrc } from '@/lib/attachment-url';
-import { ApproveBaselineButton } from './approve-baseline-button';
+import { CircleAlert } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,30 +14,20 @@ export default async function ProjectPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const project = await prisma.project.findUnique({
-    where: { slug },
-  });
+  const project = await prisma.project.findUnique({ where: { slug } });
   if (!project) notFound();
 
-  const [pendingBaselines, approvedBaselines, recentRuns] = await Promise.all([
-    prisma.baseline.findMany({
+  const [pendingCount, approvedCount, recentRuns] = await Promise.all([
+    prisma.baseline.count({
       where: { projectId: project.id, approvedAt: null },
-      orderBy: { uploadedAt: 'desc' },
     }),
-    prisma.baseline.findMany({
+    prisma.baseline.count({
       where: { projectId: project.id, approvedAt: { not: null } },
-      orderBy: { path: 'asc' },
-      select: {
-        id: true,
-        path: true,
-        approvedAt: true,
-        approvedBy: true,
-      },
     }),
     prisma.run.findMany({
       where: { projectId: project.id },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 30,
       select: {
         id: true,
         status: true,
@@ -47,12 +36,16 @@ export default async function ProjectPage({
         commitSha: true,
         createdAt: true,
         finishedAt: true,
+        durationMs: true,
+        totalTests: true,
+        passedTests: true,
+        failedTests: true,
       },
     }),
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <Link
           href="/"
@@ -66,90 +59,36 @@ export default async function ProjectPage({
         <p className="mt-1 font-mono text-xs text-fg-subtle">{project.slug}</p>
       </header>
 
-      {pendingBaselines.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-warning">
-              Pending baselines
-            </h2>
-            <p className="text-xs text-fg-subtle">
-              {pendingBaselines.length} candidate
-              {pendingBaselines.length === 1 ? '' : 's'} from CI — review and
-              approve to make them the source of truth.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {pendingBaselines.map((b) => (
-              <article
-                key={b.id}
-                className="overflow-hidden rounded-lg border border-warning/30 bg-bg-panel"
-              >
-                <div className="bg-bg-hover">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={attachmentSrc(b.storagePath)}
-                    alt={b.path}
-                    className="block max-h-[480px] w-full object-contain"
-                  />
-                </div>
-                <div className="space-y-2 px-4 py-3">
-                  <p className="break-all font-mono text-[11px] text-fg-muted">
-                    {b.path}
-                  </p>
-                  <div className="flex items-center justify-between gap-3 text-xs text-fg-subtle">
-                    <span>
-                      uploaded {formatRelativeTime(b.uploadedAt)}
-                      {b.commitSha
-                        ? ` · ${b.commitSha.slice(0, 7)}`
-                        : ''}
-                    </span>
-                    <ApproveBaselineButton baselineId={b.id} />
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+      {pendingCount > 0 && (
+        <Link
+          href={`/projects/${slug}/pending`}
+          className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm hover:bg-warning/15"
+        >
+          <CircleAlert className="h-4 w-4 shrink-0 text-warning" />
+          <span className="flex-1">
+            <span className="font-medium text-warning">
+              {pendingCount} baseline{pendingCount === 1 ? '' : 's'} awaiting
+              review
+            </span>{' '}
+            <span className="text-fg-muted">
+              — first-time captures from CI; tests stay red until approved.
+            </span>
+          </span>
+          <span className="whitespace-nowrap text-xs font-medium text-warning">
+            Review →
+          </span>
+        </Link>
       )}
 
       <section className="space-y-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
-            Approved baselines
+            Recent runs
           </h2>
           <p className="text-xs text-fg-subtle">
-            {approvedBaselines.length} approved
+            {approvedCount} approved baseline{approvedCount === 1 ? '' : 's'}
           </p>
         </div>
-        {approvedBaselines.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-bg-panel/60 px-4 py-8 text-center text-sm text-fg-subtle">
-            No approved baselines yet. CI uploads candidates here when
-            Playwright writes a missing snapshot for the first time.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-bg-panel text-xs">
-            {approvedBaselines.map((b) => (
-              <li
-                key={b.id}
-                className="flex items-center gap-3 px-4 py-2.5"
-              >
-                <span className="font-mono text-fg-muted truncate">{b.path}</span>
-                <span className="ml-auto whitespace-nowrap text-fg-subtle">
-                  approved by {b.approvedBy ?? 'unknown'}
-                  {b.approvedAt
-                    ? ` · ${formatRelativeTime(b.approvedAt)}`
-                    : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
-          Recent runs
-        </h2>
         {recentRuns.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border bg-bg-panel/60 px-4 py-8 text-center text-sm text-fg-subtle">
             No runs uploaded yet.
@@ -168,6 +107,9 @@ export default async function ProjectPage({
                     prNumber={r.prNumber}
                     commitSha={r.commitSha}
                   />
+                  <span className="text-fg-subtle">
+                    {r.passedTests}/{r.totalTests} passed
+                  </span>
                   <span className="ml-auto whitespace-nowrap font-mono text-fg-subtle">
                     {formatRelativeTime(r.createdAt)}
                   </span>

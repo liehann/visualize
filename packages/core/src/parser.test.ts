@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { classifySnapshot, normalizeAttachmentPath, rollupRun } from './parser.js';
+import {
+  classifySnapshot,
+  flattenSpecs,
+  normalizeAttachmentPath,
+  rollupRun,
+} from './parser.js';
 import type { ParsedSpec } from './parser.js';
+import type { PlaywrightReport } from './types.js';
 
 describe('normalizeAttachmentPath', () => {
   it('keeps already-relative HTML reporter paths unchanged', () => {
@@ -142,5 +148,115 @@ describe('rollupRun', () => {
   it('sums durations', () => {
     const r = rollupRun([spec('passed', 100), spec('passed', 250)]);
     expect(r.durationMs).toBe(350);
+  });
+});
+
+describe('flattenSpecs — attachment path/body fallback', () => {
+  /**
+   * Replicates the kuruvu_track screenshot-diff failure mode that
+   * silently lost evidence in production: Playwright emits the
+   * actual/expected/diff triplet with both an absolute `path` (under a
+   * non-default `outputDir`) AND an inline base64 `body`. Before the
+   * fallback, an unanchorable `path` made `attachmentToParsed` return
+   * null and the inline body was never inspected — the test failure
+   * was visible (error message persisted) but the diff images
+   * vanished from the upload, so the user couldn't approve the diff.
+   */
+  function makeReport(attachment: {
+    name: string;
+    path?: string;
+    body?: string;
+    contentType?: string;
+  }): PlaywrightReport {
+    return {
+      suites: [
+        {
+          title: 'golden.spec.ts',
+          file: 'golden.spec.ts',
+          column: 0,
+          line: 0,
+          specs: [
+            {
+              title: 'athletes-grid',
+              file: 'golden.spec.ts',
+              line: 70,
+              column: 7,
+              tests: [
+                {
+                  projectName: 'chromium',
+                  expectedStatus: 'passed',
+                  status: 'unexpected',
+                  results: [
+                    {
+                      retry: 0,
+                      duration: 8000,
+                      status: 'failed',
+                      attachments: [attachment],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as PlaywrightReport;
+  }
+
+  it('keeps an attachment whose path was already under test-results/', () => {
+    const report = makeReport({
+      name: 'athletes-grid-actual',
+      path: '/home/runner/work/foo/foo/test-results/spec/athletes-grid-actual.png',
+      contentType: 'image/png',
+    });
+    const specs = flattenSpecs(report, 'bundle-rel');
+    const att = specs[0]!.results[0]!.attachments[0]!;
+    expect(att.snapshotKind).toBe('actual');
+    expect(att.snapshotName).toBe('athletes-grid');
+    expect(att.storagePath).toContain('test-results/spec/athletes-grid-actual.png');
+    expect(att.inlineBody).toBeUndefined();
+  });
+
+  it('falls back to inline body when an absolute path cannot be normalized', () => {
+    // This is the bug class: a custom outputDir like ".test-output/"
+    // means the path doesn't anchor on test-results/ or data/. Older
+    // parser code returned null here and dropped the attachment, even
+    // though Playwright also sent the bytes as `body`.
+    const report = makeReport({
+      name: 'athletes-grid-actual',
+      path: '/home/runner/work/foo/foo/.test-output/spec/athletes-grid-actual.png',
+      body: 'aGVsbG8=', // 'hello' base64
+      contentType: 'image/png',
+    });
+    const specs = flattenSpecs(report, 'bundle-rel');
+    const atts = specs[0]!.results[0]!.attachments;
+    expect(atts).toHaveLength(1);
+    expect(atts[0]!.snapshotKind).toBe('actual');
+    expect(atts[0]!.inlineBody).toBe('aGVsbG8=');
+    // Storage path is synthesized under bundle-rel/inline/ for body-only
+    expect(atts[0]!.storagePath).toContain('inline/');
+  });
+
+  it('drops the attachment only when there is genuinely no path AND no body', () => {
+    const report = makeReport({
+      name: 'athletes-grid-actual',
+      path: '/home/runner/work/foo/foo/.test-output/spec/athletes-grid-actual.png',
+      contentType: 'image/png',
+      // No body. Path can't be normalized. Truly nothing to store.
+    });
+    const specs = flattenSpecs(report, 'bundle-rel');
+    expect(specs[0]!.results[0]!.attachments).toEqual([]);
+  });
+
+  it('still uses inline body when no path is present (existing behaviour)', () => {
+    const report = makeReport({
+      name: 'athletes-grid-diff',
+      body: 'aGVsbG8=',
+      contentType: 'image/png',
+    });
+    const specs = flattenSpecs(report, 'bundle-rel');
+    const att = specs[0]!.results[0]!.attachments[0]!;
+    expect(att.inlineBody).toBe('aGVsbG8=');
+    expect(att.snapshotKind).toBe('diff');
   });
 });

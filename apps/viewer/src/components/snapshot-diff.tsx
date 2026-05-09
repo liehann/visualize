@@ -37,10 +37,19 @@ export function SnapshotDiff({ triplet, onOpen, onApproved }: Props) {
       if (res.ok) {
         setApproved(true);
         onApproved?.();
-      } else {
-        const text = await res.text().catch(() => '');
-        setError(text || `approve failed (${res.status})`);
+        return;
       }
+      // Prefer the structured `detail` field from the route's catch
+      // block over raw text — it carries the underlying server error
+      // (e.g. EROFS / ENOENT from a misconfigured volume).
+      let detail: string | null = null;
+      try {
+        const body = (await res.clone().json()) as { detail?: string; error?: string };
+        detail = body.detail ?? body.error ?? null;
+      } catch {
+        detail = (await res.text().catch(() => '')) || null;
+      }
+      setError(detail || `approve failed (${res.status})`);
     });
   };
 

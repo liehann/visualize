@@ -39,8 +39,12 @@ export async function registerBaselineFetchRoutes(
       if (!project) {
         throw app.httpErrors.notFound(`Project not found: ${slug}`);
       }
+      // Only return APPROVED baselines. Rows with `approvedAt = null` came
+      // in via baseline-path uploads (CI bootstrapping) and need to be
+      // approved in the viewer before they're trusted as the reference
+      // image. Fetching pending rows would silently bypass the review gate.
       const baselines = await prisma.baseline.findMany({
-        where: { projectId: project.id },
+        where: { projectId: project.id, approvedAt: { not: null } },
         select: {
           id: true,
           path: true,

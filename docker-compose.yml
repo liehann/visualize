@@ -52,7 +52,11 @@ services:
       # in the viewer falls back to that when INGEST_PUBLIC_URL is unset.
       PORT: 3000
     volumes:
-      - visualize-data:/var/lib/visualize/data:ro
+      # Writable: the viewer's approve-diff flow copies an "actual"
+      # attachment from runs/<runId>/.../actual.png into
+      # baselines/<projectId>/.../<name>.png. A read-only mount makes
+      # that mkdir+copyFile fail with ENOENT.
+      - visualize-data:/var/lib/visualize/data
     expose:
       - '3000'
     healthcheck:

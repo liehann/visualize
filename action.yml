@@ -97,12 +97,14 @@ inputs:
     default: 'true'
   github-token:
     description: >-
-      Token used to post the PR comment. Defaults to `${{ github.token }}`.
-      For PRs from forks the default token is read-only — provide a
-      separate token (or run the comment step from a `pull_request_target`
-      workflow) to enable comments there.
+      Token used to post the PR comment + commit status. Falls back to
+      `${{ github.token }}` (the workflow's `GITHUB_TOKEN`) when unset,
+      so most callers don't need to pass anything. For PRs from forks
+      the default token is read-only — provide a separate token (or
+      run from a `pull_request_target` workflow) to enable comments
+      there.
     required: false
-    default: ${{ github.token }}
+    default: ''
 
 runs:
   using: 'composite'
@@ -302,7 +304,7 @@ runs:
         steps.upload.outputs.run_id != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
         SLUG='${{ inputs.project }}'
@@ -371,7 +373,7 @@ runs:
         steps.upload.outputs.run_id != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
         VIEWER='${{ inputs.viewer-url }}'

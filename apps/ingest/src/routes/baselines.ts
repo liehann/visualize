@@ -98,6 +98,30 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
       },
     });
 
+    // Don't overwrite an already-approved baseline. The action's
+    // `baseline-path` step uploads the *entire* `__screenshots__/` tree
+    // on every CI run — most of which were just fetched from us and
+    // match our existing approved bytes. But if a developer runs locally
+    // with `--update-snapshots` (or some future Playwright behavior
+    // writes to `__screenshots__/` on a diff) the upload would carry
+    // *new* bytes for an approved path. Replacing them would silently
+    // bypass the approve gate. Reject instead — the proper way to
+    // change an approved baseline is via the diff/Approve flow on a run.
+    const existing = await prisma.baseline.findUnique({
+      where: { projectId_path: { projectId: project.id, path: meta.path } },
+      select: { id: true, approvedAt: true },
+    });
+    if (existing?.approvedAt) {
+      imageStream.resume();
+      reply.code(200);
+      return {
+        id: existing.id,
+        skipped: 'already-approved',
+        message:
+          'Baseline at this path is already approved; bytes left untouched. Approve a diff in the viewer to update.',
+      };
+    }
+
     // The PNG on disk lives under DATA_DIR/baselines/<projectId>/<sanitized
     // path>; the canonical key for everyone else is `meta.path`. We sanitize
     // for the on-disk segment to defend against path-traversal regardless

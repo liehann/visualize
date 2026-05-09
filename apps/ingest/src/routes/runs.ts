@@ -128,6 +128,23 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
       });
       const rollup = rollupRun(specs);
 
+      // 3a. Persist any inlined attachment bodies (`testInfo.attach({body})`).
+      //     Playwright's JSON reporter inlines these as base64 with no
+      //     `path`, so the bundle zip doesn't contain a file at the
+      //     storagePath we computed — we have to write it out ourselves.
+      for (const spec of specs) {
+        for (const result of spec.results) {
+          for (const att of result.attachments) {
+            if (!att.inlineBody) continue;
+            const abs = resolveDataPath(att.storagePath);
+            await ensureDir(path.posix.dirname(abs));
+            const buf = Buffer.from(att.inlineBody, 'base64');
+            await fs.writeFile(abs, buf);
+            att.sizeBytes = buf.length;
+          }
+        }
+      }
+
       const finishedAt = new Date();
 
       const created = await prisma.$transaction(async (tx) => {

@@ -53,6 +53,12 @@ export type ParsedAttachment = {
    *  spec.file + projectName + run platform. Used by the approve handler
    *  as the canonical key when promoting actual → Baseline. */
   snapshotPath?: string;
+  /** Base64-encoded payload from `testInfo.attach({body, contentType})`.
+   *  Present only when the original attachment had `body` and no `path`
+   *  in the JSON report — the persistence layer decodes this and writes
+   *  the bytes to `storagePath`, since the bundle zip won't contain the
+   *  file (Playwright inlined the bytes in JSON instead). */
+  inlineBody?: string;
 };
 
 /** Project-level config that the parser needs to compute baseline paths. */
@@ -194,9 +200,17 @@ function attachmentToParsed(
     if (relPath === null) return null;
   }
 
+  const inlineBody = !relPath && a.body ? a.body : undefined;
+  const inlineExt = inlineBody
+    ? extensionFor(a.contentType, a.name)
+    : undefined;
   const storagePath = relPath
     ? path.posix.join(bundleRel, relPath)
-    : path.posix.join(bundleRel, 'inline', `${cryptoSafe(a.name)}.bin`);
+    : path.posix.join(
+        bundleRel,
+        'inline',
+        `${cryptoSafe(a.name)}${inlineExt ?? '.bin'}`,
+      );
 
   const kind = classifyKind(a);
   const { snapshotKind, snapshotName } = classifySnapshot(a);
@@ -222,7 +236,33 @@ function attachmentToParsed(
     snapshotKind,
     snapshotName,
     snapshotPath,
+    inlineBody,
   };
+}
+
+/** Pick a sensible extension for a body-inlined attachment so the file
+ *  served from /api/files/... gets the right MIME type. Prefer the
+ *  attachment's existing extension (e.g. "race-tracker.png" → ".png");
+ *  fall back to a contentType lookup; finally ".bin". */
+function extensionFor(contentType: string | undefined, name: string): string {
+  const fromName = /\.[a-z0-9]+$/i.exec(name);
+  if (fromName) return fromName[0]!.toLowerCase();
+  if (!contentType) return '.bin';
+  const ct = contentType.split(';')[0]!.trim().toLowerCase();
+  switch (ct) {
+    case 'image/png': return '.png';
+    case 'image/jpeg': return '.jpg';
+    case 'image/webp': return '.webp';
+    case 'image/gif': return '.gif';
+    case 'image/svg+xml': return '.svg';
+    case 'video/webm': return '.webm';
+    case 'video/mp4': return '.mp4';
+    case 'application/json': return '.json';
+    case 'application/zip': return '.zip';
+    case 'text/plain': return '.txt';
+    case 'text/html': return '.html';
+    default: return '.bin';
+  }
 }
 
 // Exported for unit tests. Returns null when the path looks absolute

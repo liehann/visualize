@@ -8,9 +8,10 @@ import { defineConfig, devices } from '@playwright/test';
  * Run locally:
  *   pnpm --filter @visualize/viewer test
  *
- * The webServer block boots `next dev` so tests can run without a separate
- * service. AUTH bypass for tests is via NEXTAUTH dev mode + a special
- * `playwright` cookie; see tests/setup.ts.
+ * Test groups run in dependency order. `empty` covers the home /
+ * sign-in / health smoke tests against a clean DB; `seeded` runs the
+ * real-flow feature tour after seeding a fixture project, so its
+ * data doesn't break the empty-state assertions.
  */
 export default defineConfig({
   testDir: './tests',
@@ -29,9 +30,20 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // The empty-state group keeps the project name `chromium` so the
+    // committed `*-chromium-linux.png` snapshot baselines under
+    // tests/<spec>.ts-snapshots/ still match. Renaming the project
+    // would silently break visual regression on every existing spec.
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['**/feature-tour.spec.ts'],
+    },
+    {
+      name: 'chromium-seeded',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/feature-tour.spec.ts'],
+      dependencies: ['chromium'],
     },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL

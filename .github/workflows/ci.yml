@@ -10,6 +10,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  actionlint:
+    name: actionlint (action.yml + workflows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        # Catches the class of bug that broke @main twice in one day:
+        # ${{ github.token }} as an input default (not allowed) and
+        # ${{ … }} expressions inside `description:` strings (parsed
+        # eagerly by the runner). Fast, no runtime, runs on every PR.
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -version
+      - name: Lint action.yml + .github/workflows/*
+        run: ./actionlint -color action.yml .github/workflows/*.yml
+
   typecheck:
     name: typecheck + build
     runs-on: ubuntu-latest
@@ -44,9 +60,10 @@ jobs:
         run: pnpm -r typecheck
 
       - name: Test
-        # Unit tests for parser correctness and token utilities — the
-        # things that would silently corrupt run data or break CI uploads.
-        run: pnpm --filter @visualize/core test
+        # All unit tests across the workspace — parser, route helpers,
+        # MCP tool dispatch, lib functions. Fast in-memory tests with no
+        # DB and no docker. Production-like compose smoke runs separately.
+        run: pnpm -r test
 
       - name: Build
         # We don't need viewer's `next build` here (would require a DB

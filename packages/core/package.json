@@ -41,6 +41,10 @@
     "./diff_metrics": {
       "types": "./dist/diff_metrics.d.ts",
       "default": "./dist/diff_metrics.js"
+    },
+    "./data_dir_check": {
+      "types": "./dist/data_dir_check.d.ts",
+      "default": "./dist/data_dir_check.js"
     }
   },
   "files": [

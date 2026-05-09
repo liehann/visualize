@@ -67,8 +67,10 @@ export async function findPendingBaselinesForTest(opts: {
   return Array.from(byName.values());
 }
 
+// Match both the ASCII apostrophe (`'`) and the Unicode right single
+// quotation mark (`’`, U+2019) Playwright sometimes emits.
 const MISSING_SNAPSHOT_RE =
-  /A snapshot doesn(?:'|\\u2019)?t exist at\s+(\S+\.png)/g;
+  /A snapshot doesn['’]?t exist at\s+(\S+\.png)/g;
 
 export function extractMissingSnapshotNames(
   errorMessages: Array<string | null | undefined>,

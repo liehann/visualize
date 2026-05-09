@@ -222,13 +222,31 @@ data, break the public contract, or regress UX**. Don't test trivia.
 
 ### Quality gates
 
-- **Typecheck** must pass on every PR (`pnpm typecheck`).
-- **Unit + parser tests** must pass on every PR.
-- **Visual regression suite** must pass on every PR. New visual diffs
-  require explicit per-screenshot approval through the viewer (the same
-  flow the customer uses) — that's the whole point of the product.
+Each row is a separate CI job; together they fence off the bug classes
+we've actually been bitten by.
+
+| Job | Catches |
+| --- | --- |
+| **typecheck + build** (`pnpm -r typecheck` + `pnpm -r test`) | Logic regressions, type drift, broken imports. 88 vitest unit tests across all four packages — parser, snapshot path, tokens, diff metrics, data-dir check, route + component tests, MCP json-schema converter, ingest auth hook. |
+| **actionlint (workflows)** | `${{ … }}` expression typos, missing required keys, shell-script issues in `.github/workflows/*.yml`. Doesn't validate composite-action manifests (`action.yml`) — see below. |
+| **e2e + visual upload** | Dogfood: viewer Playwright suite + visual regression. Also acts as the canary for `action.yml` manifest regressions, because the dogfood workflow uses `uses: ./` so any `action.yml` parse error fails on the contributing PR before `@main` can poison downstream consumers. |
+| **prod compose stack boots cleanly** | Deploy-config bugs the dev pipeline can't see: invalid mount syntax, mode drift (the `:ro` regression that took prod's approve flow down), broken Dockerfiles, missing env-var interpolation, non-healthy services. Combined with the boot-time `DATA_DIR` write check, a misconfigured volume fails this job at PR time. |
+| **Visual regression** | The whole product's reason to exist — covered by the per-screenshot approve flow, not by automation. New diffs need a human eye through the viewer. |
+
+Other invariants that are not jobs but are still load-bearing:
+
 - **No silent data migrations.** Every Prisma migration is reviewed;
   destructive migrations require a backup script in the same PR.
+- **`uses: ./` in the dogfood workflow.** Any change to `action.yml`
+  is parsed by the contributing PR's CI. Don't switch back to
+  `@main` — that's how PR #28's broken manifest reached every consumer
+  before our own pipeline noticed.
+- **Boot-time `DATA_DIR` write check.** The viewer
+  (`apps/viewer/instrumentation.ts`) and ingest (`apps/ingest/src/server.ts`)
+  call `assertDataDirWritable()` from `@visualize/core/data_dir_check`
+  before serving traffic. Misconfigured volume = service refuses to
+  start with a clear message, instead of an opaque ENOENT on the first
+  user click.
 
 ### Operational defaults (the "no outages" pact)
 

@@ -81,9 +81,9 @@ inputs:
   comment-on-pr:
     description: >-
       Whether to upsert a sticky PR comment summarizing the run. Requires
-      `viewer-url` and a `github-token` with `pull-requests: write` (the
-      default `${{ github.token }}` works for PRs from the same repo when
-      the workflow grants the permission).
+      `viewer-url` and a `github-token` with `pull-requests: write` — the
+      workflow's default GITHUB_TOKEN works for PRs from the same repo
+      when the job grants the permission.
     required: false
     default: 'true'
   set-status-check:
@@ -98,11 +98,10 @@ inputs:
   github-token:
     description: >-
       Token used to post the PR comment + commit status. Falls back to
-      `${{ github.token }}` (the workflow's `GITHUB_TOKEN`) when unset,
-      so most callers don't need to pass anything. For PRs from forks
-      the default token is read-only — provide a separate token (or
-      run from a `pull_request_target` workflow) to enable comments
-      there.
+      the workflow's GITHUB_TOKEN when unset, so most callers don't need
+      to pass anything. For PRs from forks the default token is
+      read-only — provide a separate token (or run from a
+      `pull_request_target` workflow) to enable comments there.
     required: false
     default: ''
 

@@ -1,0 +1,112 @@
+name: Compose smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Stand up the production docker-compose stack and verify every service
+# reports healthy. The point is to catch deploy-config-class bugs that
+# the in-process unit suite can't see — the read-only volume mount that
+# took prod's approve flow down today is the canonical example. With the
+# new DATA_DIR boot check, a `:ro` mount fails the viewer's startup, so
+# this job is exactly the gate we wanted at PR time.
+#
+# Uses the dev-profile postgres baked into docker-compose.yml so we don't
+# need a runner-side service container (which can't easily be reached
+# from inside the compose network).
+jobs:
+  smoke:
+    name: prod compose stack boots cleanly
+    runs-on: ubuntu-latest
+    env:
+      # All values are placeholders. Real prod values come from Coolify.
+      DATABASE_URL: postgresql://visualize:visualize@postgres:5432/visualize?schema=public
+      API_SECRET: smoke-test-api-secret-not-real
+      AUTH_SECRET: smoke-test-auth-secret-thats-long-enough-to-pass-zod
+      MCP_SECRET: smoke-test-mcp-secret-not-real
+      VIEWER_URL: http://localhost:3000
+      AUTHENTIK_ISSUER: https://example.invalid/
+      AUTHENTIK_CLIENT_ID: smoke-ci
+      AUTHENTIK_CLIENT_SECRET: smoke-ci
+      POSTGRES_DEV_PASSWORD: visualize
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up pnpm
+        run: corepack enable && corepack prepare pnpm@10 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install (for Prisma migrate)
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate docker-compose config
+        # `docker compose config` re-parses + validates the YAML and env
+        # interpolation. Catches typos, undefined env vars, invalid mount
+        # syntax before we spend build time.
+        run: docker compose -f docker-compose.yml --profile dev config >/dev/null
+
+      - name: Bring up the dev-profile Postgres
+        run: |
+          docker compose -f docker-compose.yml --profile dev up -d --wait postgres
+          docker compose -f docker-compose.yml ps
+
+      - name: Apply Prisma migrations
+        # Migrations run from the host against the dev postgres
+        # (it publishes 5432:5432) so the production services come up
+        # with the schema already in place.
+        env:
+          DATABASE_URL: postgresql://visualize:visualize@localhost:5432/visualize?schema=public
+        run: pnpm prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Build production images
+        env:
+          DOCKER_BUILDKIT: '1'
+        run: docker compose -f docker-compose.yml build --pull ingest viewer mcp
+
+      - name: Bring up the production services
+        # `--wait` blocks until every service reports healthy or one
+        # exits non-zero. With the DATA_DIR boot check in place, a `:ro`
+        # mount (or any other write-path misconfig) fails the viewer's
+        # startup, which makes this step fail. That's the bug class this
+        # whole job exists to catch.
+        run: |
+          docker compose -f docker-compose.yml up -d --wait \
+            ingest viewer mcp \
+            || { docker compose -f docker-compose.yml logs --no-color; exit 1; }
+
+      - name: Smoke-probe healthchecks
+        # The services don't publish to host (`expose:` only), so probe
+        # from inside each container. wget is in all three images.
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml exec -T ingest \
+            wget -qO- http://127.0.0.1:4000/healthz | tee /dev/stderr | grep -qi ok
+          docker compose -f docker-compose.yml exec -T mcp \
+            wget -qO- http://127.0.0.1:5000/healthz | tee /dev/stderr | grep -qi ok
+          docker compose -f docker-compose.yml exec -T viewer \
+            wget -qO- http://127.0.0.1:3000/api/health | tee /dev/stderr
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml --profile dev down -v

@@ -451,21 +451,107 @@ having to remember it exists.
   drive Playwright through every interaction state and dump screenshots
   to `screenshots/` for review.
 
+### Done (session 4, 2026-05-09) — incident response + test hardening + trace viewer
+
+This session started as a feature push and turned into an
+incident-response chain after PR #28 introduced two production bugs.
+Resulting in a much stronger CI safety net and one new big feature.
+
+**Production incident chain (all merged):**
+- `a994680` (#29) — hotfix `${{ github.token }}` default in action.yml
+  manifest (broke every consumer of `liehann/visualize@main`).
+- `3356b71` (#31) — surface pending baselines on the failed-test page so
+  reviewers can approve a first-time-write baseline in-place instead of
+  bouncing to `/projects/<slug>/pending`.
+- `f4e6493` (#32) — wrap `/api/baselines/[id]/approve` in try/catch with
+  a JSON `detail` field. Next.js's default opaque 500 was eating the
+  underlying cause of failed approves.
+- `7c75b43` (#33) — **the actual diff-approve fix:** dropped the `:ro`
+  modifier on the viewer's `visualize-data` mount. The flow needed
+  write access to copy `actual.png` into `baselines/<projectId>/...`;
+  the read-only mount surfaced as cryptic ENOENT-on-mkdir, untraceable
+  before the `detail` field landed. Same try/catch instrumentation
+  added to `/api/approve/[attachmentId]`.
+- `756e50a` (#38) — parser falls back to inline `body` when `path`
+  can't be normalized (a related bug class for attachments without
+  an anchorable absolute path).
+- `62553da` (#40) — **the kuruvu_track fix:** action sed-rewrites
+  absolute outputDir paths in `report.json` to bundle-relative
+  `test-results/...`. kuruvu_track has `outputDir: tests/e2e/artifacts/test-output`,
+  which the parser couldn't anchor, so every screenshot triplet was
+  silently dropped. The bytes were in the bundle; the report.json
+  pointed at the original absolute path.
+- `cd0949c` (#42) — extracted action bundling to
+  `scripts/bundle-playwright-report.sh`. Action and the seam test
+  invoke the same script; no more drift risk.
+
+**Test coverage expansion (all merged):**
+- `39cd386` (#34) — `actionlint` job in CI; boot-time
+  `assertDataDirWritable` in viewer + ingest (fail-fast on misconfigured
+  volume mounts); vitest in every app; first batch of unit tests.
+- `de8fa94` (#35) — production-stack compose smoke job
+  (`.github/workflows/compose-smoke.yml`). Boots ingest + viewer + mcp
+  against a dev-profile Postgres and waits for healthchecks. Catches
+  deploy-config bugs (the `:ro` regression class) at PR time.
+- `8a7c496` (#36) — CLAUDE.md catalogue of test safeguards by bug class.
+- `0ceceb6` (#37) — `<BulkApprove>` component tests.
+- `9e6ed6d` (#39) — `<DiffLightbox>` component tests.
+- `2c5b186` (#41) — **action ↔ parser seam test**
+  (`packages/core/src/action_parser_seam.test.ts`). Replays the
+  kuruvu_track shape (custom outputDir, synthetic `report.json` with
+  absolute paths) against the action's actual `sed` invocation +
+  the production parser. Plus a regression guard that *replays the
+  bug shape* (no sed) and asserts the parser drops attachments —
+  locking in why the seam matters.
+
+**New feature (merged):**
+- `<latest>` (#43) — **embedded Playwright trace viewer.** Click "View
+  trace →" on any trace attachment, get a new tab with the full
+  Playwright trace viewer (timeline / actions / screenshots / network
+  / console) rendered against `https://trace.playwright.dev`. Auth
+  bridged via 5-minute HMAC-signed URLs (`lib/signed-trace.ts`):
+  `POST /api/trace/sign/[id]` (auth-gated) mints a token, `GET
+  /api/trace/raw/[id]?token=...` (public, token-gated, CORS-allowed
+  for trace.playwright.dev) serves the bytes. 9 new tests cover the
+  signing logic + the client component.
+
+**Test counts:** workspace at **118 vitest unit tests** (was 53
+before this session), in `~1s` wall, plus the dogfood Playwright
+suite + compose smoke + actionlint.
+
 ### What still wants doing (Claude prioritizes; stakeholder may redirect)
 
-1. **Embedded Playwright trace viewer.** Playwright ships `show-trace`
-   as static HTML that can be served against our storage. Today the
-   viewer just offers Download.
-2. **Annotation drawing UI.** Data model and MCP write path both work;
+1. **Annotation drawing UI.** Data model and MCP write path both work;
    the human-facing draw-on-screenshot UI is roadmap.
-3. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
-   only changed tests with the diffs side by side.
-4. **Retention / GC.** Videos eat disk fast — auto-delete runs older
+2. **Run-vs-run comparison.** Pick two runs (e.g. main vs PR), show
+   only changed tests with the diffs side by side. Was up next when
+   the session was cleared.
+3. **Retention / GC.** Videos eat disk fast — auto-delete runs older
    than N days per project.
-5. **Slack/webhook notifications** on failure or approval.
-6. **Smoke / round-trip test in CI** — the verification I just did
-   manually should be a job that boots the stack with docker-compose
-   and asserts the upload pipeline still works on every PR.
+4. **Slack/webhook notifications** on failure or approval.
+5. **Live HTTP-boundary integration test.** Compose-smoke currently just
+   waits for healthchecks. Extending it to round-trip a synthetic
+   bundle through the running ingest + viewer (asserting attachments
+   land in the DB) would close the last seam not under test.
+
+### Open PRs at session-clear
+
+- **#30 — real-flow E2E (orphaned).** Was meant to seed a fixture run
+  + drive the lightbox in Playwright for a recordable demo video. The
+  spec gets stuck on the slider stage's `boundingBox` call — the
+  lightbox opens but the slider mode doesn't render in time. Not
+  blocking anything; orthogonal to the production incidents. Either
+  debug the timing or close as superseded by the real-flow tests we'd
+  get from a live HTTP-boundary smoke.
+- **No other open PRs** at session clear.
+
+### Outstanding user-side action
+
+- **Coolify redeploy.** Last deploy at `7c75b43` (2026-05-09 07:55 UTC).
+  Everything from `#34` onwards is on `main` but not in production. Once
+  Coolify is on latest `main` and you re-trigger kuruvu_track CI, the
+  failed-screenshot tests should render with attachments + Approve
+  button + (new) View Trace button.
 
 ### Roadmap (Claude-owned, customer prioritizes)
 

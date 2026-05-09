@@ -50,12 +50,15 @@ test('PR-feedback-loop tour — lightbox, slider, bulk approve', async ({ page }
   await page.mouse.move(targetX, cy, { steps: 12 });
   await page.mouse.up();
   await page.waitForTimeout(400);
-  // Slider position is encoded into clip-path on the actual layer.
+  // Slider position is encoded into clip-path on the actual layer. The
+  // computed clipPath value is browser-stringified (chromium emits
+  // "inset(0px 0px 0px 25%)" — note the explicit `px` units that we
+  // didn't write). Anchor the assertion on the percentage portion.
   const clip = await dialog
     .locator('[style*="clip-path"]')
     .first()
     .evaluate((el) => (el as HTMLElement).style.clipPath);
-  expect(clip).toMatch(/inset\(0 0 0 2[0-9](\.\d+)?%\)/);
+  expect(clip).toMatch(/2[0-9](?:\.\d+)?%/);
 
   // 4. Cycle through view modes via keyboard. The active tab gets a
   //    darker background — easier to assert via the tablist semantics.

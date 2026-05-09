@@ -10,6 +10,7 @@ import {
   PlaywrightAttachment,
 } from './types.js';
 import { resolveDataPath } from './storage.js';
+import { computeSnapshotPath } from './snapshot_path.js';
 import { AttachmentKind, RunStatus, SnapshotKind, TestStatus } from '@prisma/client';
 
 export type ParsedSpec = {
@@ -47,6 +48,19 @@ export type ParsedAttachment = {
   kind: AttachmentKind;
   snapshotKind?: SnapshotKind;
   snapshotName?: string;
+  /** Repo-relative on-disk path of the BASELINE this snapshot maps to.
+   *  Computed at parse time from the project's snapshotPathTemplate +
+   *  spec.file + projectName + run platform. Used by the approve handler
+   *  as the canonical key when promoting actual → Baseline. */
+  snapshotPath?: string;
+};
+
+/** Project-level config that the parser needs to compute baseline paths. */
+export type ProjectSnapshotConfig = {
+  snapshotPathTemplate: string;
+  testDir: string;
+  /** Runner platform from the run upload — "linux" / "darwin" / "win32". */
+  platform: string;
 };
 
 /**
@@ -66,6 +80,7 @@ export async function loadReport(bundleRel: string): Promise<PlaywrightReport> {
 export function flattenSpecs(
   report: PlaywrightReport,
   bundleRel: string,
+  projectConfig?: ProjectSnapshotConfig,
 ): ParsedSpec[] {
   const out: ParsedSpec[] = [];
 
@@ -73,7 +88,7 @@ export function flattenSpecs(
     const titles = [...ancestors, suite.title].filter(Boolean);
     for (const spec of suite.specs ?? []) {
       for (const test of spec.tests ?? []) {
-        out.push(specToParsed(suite, spec, test, titles, bundleRel));
+        out.push(specToParsed(suite, spec, test, titles, bundleRel, projectConfig));
       }
     }
     for (const child of suite.suites ?? []) walk(child, titles);
@@ -89,9 +104,16 @@ function specToParsed(
   test: PlaywrightTest,
   ancestorTitles: string[],
   bundleRel: string,
+  projectConfig: ProjectSnapshotConfig | undefined,
 ): ParsedSpec {
   const titlePath = [...ancestorTitles, spec.title].filter(Boolean).join(' > ');
-  const results = (test.results ?? []).map((r) => resultToParsed(r, bundleRel));
+  const results = (test.results ?? []).map((r) =>
+    resultToParsed(r, bundleRel, {
+      specFile: spec.file,
+      projectName: test.projectName,
+      projectConfig,
+    }),
+  );
   const finalResult = results[results.length - 1];
   const status = (test.status ?? finalResult?.status ?? 'skipped') as TestStatus;
   const durationMs = results.reduce((a, r) => a + r.durationMs, 0);
@@ -109,7 +131,17 @@ function specToParsed(
   };
 }
 
-function resultToParsed(r: PlaywrightResult, bundleRel: string): ParsedResult {
+type SnapshotResolveCtx = {
+  specFile: string;
+  projectName?: string;
+  projectConfig?: ProjectSnapshotConfig;
+};
+
+function resultToParsed(
+  r: PlaywrightResult,
+  bundleRel: string,
+  ctx: SnapshotResolveCtx,
+): ParsedResult {
   const errors = r.errors ?? [];
   const firstError = errors[0];
   const stdout = joinStream(r.stdout);
@@ -127,7 +159,7 @@ function resultToParsed(r: PlaywrightResult, bundleRel: string): ParsedResult {
     stdout,
     stderr,
     attachments: attachments
-      .map((a) => attachmentToParsed(a, bundleRel))
+      .map((a) => attachmentToParsed(a, bundleRel, ctx))
       .filter((x): x is ParsedAttachment => x !== null),
   };
 }
@@ -142,6 +174,7 @@ function joinStream(
 function attachmentToParsed(
   a: PlaywrightAttachment,
   bundleRel: string,
+  ctx: SnapshotResolveCtx,
 ): ParsedAttachment | null {
   // Playwright's JSON reporter writes attachments with a `path` that may be:
   //   1. Already-relative to the report root (e.g. "data/abcdef.png"). HTML
@@ -167,6 +200,20 @@ function attachmentToParsed(
 
   const kind = classifyKind(a);
   const { snapshotKind, snapshotName } = classifySnapshot(a);
+
+  let snapshotPath: string | undefined;
+  if (snapshotKind && snapshotName && ctx.projectConfig && ctx.projectName) {
+    const computed = computeSnapshotPath({
+      template: ctx.projectConfig.snapshotPathTemplate,
+      testDir: ctx.projectConfig.testDir,
+      specFile: ctx.specFile,
+      projectName: ctx.projectName,
+      platform: ctx.projectConfig.platform,
+      arg: snapshotName,
+    });
+    if (computed) snapshotPath = computed;
+  }
+
   return {
     name: a.name,
     contentType: a.contentType,
@@ -174,6 +221,7 @@ function attachmentToParsed(
     kind,
     snapshotKind,
     snapshotName,
+    snapshotPath,
   };
 }
 

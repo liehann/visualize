@@ -107,12 +107,8 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
       // 1. Extract the bundle into runs/<runId>/
       await extractZip(bundleTmpPath, storagePath);
 
-      // 2. Parse the report.
-      const report = await loadReport(storagePath);
-      const specs = flattenSpecs(report, storagePath);
-      const rollup = rollupRun(specs);
-
-      // 3. Persist everything atomically.
+      // 2. Resolve project FIRST so the parser can compute baseline paths
+      //    against the project's snapshot template.
       const project = await prisma.project.upsert({
         where: { slug: meta.projectSlug },
         update: meta.projectName ? { name: meta.projectName } : {},
@@ -121,6 +117,16 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
           name: meta.projectName ?? meta.projectSlug,
         },
       });
+
+      // 3. Parse the report.
+      const platform = meta.platform ?? 'linux';
+      const report = await loadReport(storagePath);
+      const specs = flattenSpecs(report, storagePath, {
+        snapshotPathTemplate: project.snapshotPathTemplate,
+        testDir: project.testDir,
+        platform,
+      });
+      const rollup = rollupRun(specs);
 
       const finishedAt = new Date();
 
@@ -134,6 +140,7 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
             prNumber: meta.prNumber,
             ciProvider: meta.ciProvider,
             ciRunUrl: meta.ciRunUrl,
+            platform,
             status: rollup.status,
             finishedAt,
             durationMs: rollup.durationMs,
@@ -182,6 +189,7 @@ export async function registerRunsRoute(app: FastifyInstance): Promise<void> {
                       kind: a.kind,
                       snapshotKind: a.snapshotKind,
                       snapshotName: a.snapshotName,
+                      snapshotPath: a.snapshotPath,
                     })),
                   },
                 })),

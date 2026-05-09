@@ -183,20 +183,36 @@ runs:
       run: |
         set -euo pipefail
         REPORT_DIR="${{ inputs.report-path }}"
-        # Default Playwright outputDir; can be overridden by users with a
-        # custom config but covers the 95% case. We zip both into a single
-        # bundle: report.json (from the JSON reporter) references absolute
-        # paths into test-results/, so without the latter the viewer ends
-        # up with broken video / screenshot references.
+        # The consumer's `playwright.config.ts outputDir` may not be the
+        # default `test-results/` (kuruvu_track uses
+        # `tests/e2e/artifacts/test-output/`, for example). We canonicalize
+        # the test-results dir into the bundle as `test-results/`, AND
+        # rewrite absolute paths in `report.json` so they're bundle-relative
+        # — otherwise the viewer's parser, which anchors on `test-results/`,
+        # silently drops every screenshot triplet attachment.
         TEST_RESULTS_DIR="${{ inputs.test-results-path }}"
         STAGING="$RUNNER_TEMP/visualize-bundle"
         ZIP="$RUNNER_TEMP/visualize-bundle.zip"
         rm -rf "$STAGING" "$ZIP"
         mkdir -p "$STAGING"
         cp -R "$REPORT_DIR/." "$STAGING/"
+
+        ABS_TEST_RESULTS=""
         if [ -d "$TEST_RESULTS_DIR" ]; then
+          ABS_TEST_RESULTS=$(cd "$TEST_RESULTS_DIR" && pwd)
           cp -R "$TEST_RESULTS_DIR" "$STAGING/test-results"
         fi
+
+        # Rewrite Playwright's JSON reporter output: absolute attachment
+        # paths under the original outputDir → bundle-relative
+        # `test-results/<rest>`. Idempotent + safe to run when the prefix
+        # doesn't match (no-op). `|` as sed delimiter avoids forward-slash
+        # escaping; an absolute path containing a literal `|` would break
+        # this, but no real CI workspace path does.
+        if [ -n "$ABS_TEST_RESULTS" ] && [ -f "$STAGING/report.json" ]; then
+          sed -i "s|${ABS_TEST_RESULTS}/|test-results/|g" "$STAGING/report.json"
+        fi
+
         ( cd "$STAGING" && zip -rq "$ZIP" . )
 
         META=$(jq -nc \

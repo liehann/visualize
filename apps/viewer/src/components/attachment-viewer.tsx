@@ -3,6 +3,7 @@ import type { Attachment, AttachmentKind } from '@prisma/client';
 import { formatBytes } from '@/lib/format';
 import { attachmentSrc } from '@/lib/attachment-url';
 import { Badge } from '@/components/ui/badge';
+import { TraceViewerButton } from '@/components/trace-viewer-button';
 
 type Props = {
   attachment: Pick<
@@ -68,16 +69,21 @@ function Body({ attachment }: Props) {
       return (
         <div className="flex items-center justify-between gap-3 rounded border border-border-strong bg-bg-hover px-4 py-3 text-sm">
           <span className="text-fg-muted">
-            Playwright trace bundle. Download to inspect with{' '}
-            <code className="font-mono text-xs text-fg">npx playwright show-trace</code>.
+            Playwright trace bundle. Open in trace.playwright.dev to inspect
+            actions, network, console, and screenshots — no local install
+            needed.
           </span>
-          <a
-            href={src}
-            download
-            className="rounded border border-border-strong bg-bg-panel px-3 py-1 text-xs text-fg hover:bg-bg-hover"
-          >
-            Download
-          </a>
+          <div className="flex items-center gap-2">
+            <TraceViewerButton attachmentId={attachment.id} />
+            <a
+              href={src}
+              download
+              className="rounded border border-border-strong bg-bg-panel px-3 py-1 text-xs text-fg hover:bg-bg-hover"
+              title="Download trace.zip for local inspection"
+            >
+              Download
+            </a>
+          </div>
         </div>
       );
     case 'text':

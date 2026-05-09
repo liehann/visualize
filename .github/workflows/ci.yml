@@ -10,6 +10,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        # actionlint's schema is for workflow YAML (jobs/on/steps), not
+        # composite-action manifests (inputs/runs). It can't validate
+        # `action.yml` directly. The catch for action.yml regressions
+        # is the dogfood workflow using `uses: ./` — that loads the
+        # local manifest at PR time, so any parse error surfaces on
+        # the contributing PR before @main is poisoned.
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -version
+      - name: Lint .github/workflows/*
+        run: ./actionlint -color .github/workflows/*.yml
+
   typecheck:
     name: typecheck + build
     runs-on: ubuntu-latest
@@ -44,9 +62,10 @@ jobs:
         run: pnpm -r typecheck
 
       - name: Test
-        # Unit tests for parser correctness and token utilities — the
-        # things that would silently corrupt run data or break CI uploads.
-        run: pnpm --filter @visualize/core test
+        # All unit tests across the workspace — parser, route helpers,
+        # MCP tool dispatch, lib functions. Fast in-memory tests with no
+        # DB and no docker. Production-like compose smoke runs separately.
+        run: pnpm -r test
 
       - name: Build
         # We don't need viewer's `next build` here (would require a DB

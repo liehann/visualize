@@ -6,6 +6,7 @@ import { requireBearer } from './auth.js';
 import { registerRoutes } from './routes/index.js';
 import { ensureDir, resolveDataPath } from '@visualize/core/storage';
 import { prisma } from '@visualize/core/db';
+import { assertDataDirWritable } from '@visualize/core/data_dir_check';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -69,6 +70,16 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => {
     void shutdown('SIGINT');
   });
+
+  // Fail-fast on misconfigured volume mounts. A read-only mount or
+  // wrong DATA_DIR would otherwise surface as cryptic ENOENT/EROFS at
+  // first ingest — better to refuse to start with a clear message.
+  try {
+    await assertDataDirWritable(env.DATA_DIR);
+  } catch (err) {
+    app.log.error({ err }, 'DATA_DIR write check failed');
+    process.exit(1);
+  }
 
   try {
     await app.listen({ host: '0.0.0.0', port: env.PORT });

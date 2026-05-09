@@ -52,11 +52,19 @@ inputs:
     default: './test-results'
   baseline-path:
     description: >-
-      Optional (upload-report mode): path to a directory of golden PNGs
-      to upload as baselines. Each PNG is uploaded with its path relative
-      to this directory as the canonical baseline path. Skip this in
-      typical workflows — let approve-in-viewer be the only baseline
-      writer.
+      Optional (upload-report mode): path to a directory tree of golden
+      PNGs (e.g. Playwright's `__screenshots__/`). Each PNG is uploaded
+      with its path relative to the workspace root as the canonical
+      baseline path — fetch-baselines round-trips them back to the same
+      location on the next CI run.
+
+      Set this when bootstrapping a new project: Playwright writes new
+      goldens here on first-time-snapshot tests, and uploading them
+      seeds the baseline set so subsequent CI runs have something to
+      diff against. For approving DIFFs (existing baseline that
+      changed), use the viewer's Approve button — Playwright doesn't
+      write to this dir on a diff, only on first-time-write, so this
+      step is idempotent across normal runs.
     required: false
   fail-on-error:
     description: >-
@@ -210,11 +218,15 @@ runs:
         set -euo pipefail
         DIR="${{ inputs.baseline-path }}"
         [ -d "$DIR" ] || { echo "baseline-path '$DIR' is not a directory"; exit 1; }
-        # Each PNG's relative path under DIR is uploaded as the canonical
-        # baseline path — fetch-baselines will write it back to that
-        # location on the next CI run.
+        # Each PNG's path relative to the workspace root is uploaded as
+        # the canonical baseline path — fetch-baselines writes it back to
+        # the same location on the next CI run, so paths must round-trip
+        # exactly. Use realpath to canonicalize then strip the workspace
+        # prefix; this handles `./` and trailing slash variants.
+        WS="$(cd "$GITHUB_WORKSPACE" && pwd)"
         find "$DIR" -name '*.png' -type f | while read -r png; do
-          PATH_REL="${png#$DIR/}"
+          ABS="$(cd "$(dirname "$png")" && pwd)/$(basename "$png")"
+          PATH_REL="${ABS#$WS/}"
           NAME=$(basename "$png" .png)
           META=$(jq -nc \
             --arg projectSlug "${{ inputs.project }}" \

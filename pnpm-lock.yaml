@@ -162,6 +162,9 @@ importers:
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.17
+      '@types/pngjs':
+        specifier: ^6.0.5
+        version: 6.0.5
       '@types/react':
         specifier: ^19.0.2
         version: 19.2.14
@@ -177,6 +180,9 @@ importers:
       eslint-config-next:
         specifier: ^15.1.0
         version: 15.5.16(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
       postcss:
         specifier: ^8.5.0
         version: 8.5.14

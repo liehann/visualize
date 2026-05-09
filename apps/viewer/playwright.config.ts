@@ -8,9 +8,10 @@ import { defineConfig, devices } from '@playwright/test';
  * Run locally:
  *   pnpm --filter @visualize/viewer test
  *
- * The webServer block boots `next dev` so tests can run without a separate
- * service. AUTH bypass for tests is via NEXTAUTH dev mode + a special
- * `playwright` cookie; see tests/setup.ts.
+ * Test groups run in dependency order. `empty` covers the home /
+ * sign-in / health smoke tests against a clean DB; `seeded` runs the
+ * real-flow feature tour after seeding a fixture project, so its
+ * data doesn't break the empty-state assertions.
  */
 export default defineConfig({
   testDir: './tests',
@@ -30,8 +31,15 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'empty',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['**/feature-tour.spec.ts'],
+    },
+    {
+      name: 'seeded',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/feature-tour.spec.ts'],
+      dependencies: ['empty'],
     },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL

@@ -106,13 +106,25 @@ export const RunUploadMetadataSchema = z.object({
   prNumber: z.coerce.number().int().positive().optional(),
   ciProvider: z.string().optional(),
   ciRunUrl: z.string().url().optional(),
+  // Runner OS — substituted into Project.snapshotPathTemplate's {platform}
+  // when computing baseline paths. Defaults to "linux"; the action sets
+  // this from RUNNER_OS so dev macOS uploads stay correctly tagged.
+  platform: z
+    .enum(['linux', 'darwin', 'win32'])
+    .optional(),
 });
 export type RunUploadMetadata = z.infer<typeof RunUploadMetadataSchema>;
 
 export const BaselineUploadMetadataSchema = z.object({
   projectSlug: z.string().min(1),
   projectName: z.string().min(1).optional(),
-  name: z.string().min(1),
+  // Repo-relative path the consumer's playwright config expects on disk.
+  // This is the canonical key for fetch — the action writes the PNG back
+  // to this exact path on the next CI run before Playwright executes.
+  path: z.string().min(1),
+  // Informational metadata. Not load-bearing; falls back to the path's
+  // basename / "any" when not supplied by the uploader.
+  name: z.string().min(1).optional(),
   browser: z.string().optional(),
   platform: z.string().optional(),
   commitSha: z.string().optional(),

@@ -1,6 +1,7 @@
 import type { AnyToolDefinition } from './types.js';
 
 import { listProjectsTool } from './list_projects.js';
+import { createProjectTool } from './create_project.js';
 import { listRunsTool } from './list_runs.js';
 import { getRunTool } from './get_run.js';
 import { listFailedTestsTool } from './list_failed_tests.js';
@@ -14,6 +15,7 @@ import { addAnnotationTool } from './add_annotation.js';
 
 export const tools: AnyToolDefinition[] = [
   listProjectsTool,
+  createProjectTool,
   listRunsTool,
   getRunTool,
   listFailedTestsTool,

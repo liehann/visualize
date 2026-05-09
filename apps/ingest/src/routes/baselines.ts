@@ -98,11 +98,15 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
       },
     });
 
-    const safeName = sanitize(meta.name);
-    const browserSeg = sanitize(meta.browser ?? 'any');
-    const platformSeg = sanitize(meta.platform ?? 'any');
-    const fileName = `${safeName}__${browserSeg}__${platformSeg}.png`;
+    // The PNG on disk lives under DATA_DIR/baselines/<projectId>/<sanitized
+    // path>; the canonical key for everyone else is `meta.path`. We sanitize
+    // for the on-disk segment to defend against path-traversal regardless
+    // of what the consumer sent.
+    const safePathSeg = sanitize(meta.path);
+    const fileName = `${safePathSeg}.png`;
     const storagePath = path.posix.join('baselines', project.id, fileName);
+    const baselineName =
+      meta.name ?? path.posix.basename(meta.path).replace(/\.[^.]+$/, '');
 
     try {
       await writeStreamToDataDir(imageStream, storagePath);
@@ -156,14 +160,15 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
 
     const baseline = await prisma.baseline.upsert({
       where: {
-        projectId_name_browser_platform: {
+        projectId_path: {
           projectId: project.id,
-          name: meta.name,
-          browser,
-          platform,
+          path: meta.path,
         },
       },
       update: {
+        name: baselineName,
+        browser,
+        platform,
         storagePath,
         sizeBytes,
         width,
@@ -174,7 +179,8 @@ export async function registerBaselinesRoute(app: FastifyInstance): Promise<void
       },
       create: {
         projectId: project.id,
-        name: meta.name,
+        path: meta.path,
+        name: baselineName,
         browser,
         platform,
         storagePath,

@@ -1,25 +1,37 @@
-name: 'Upload Playwright report to Visualize'
+name: 'Visualize for Playwright'
 description: >-
-  Bundles your Playwright report directory + posts it to a Visualize
-  ingest service. Auto-detects branch, PR number, commit, and CI run URL
-  from GitHub Actions context. Optionally also uploads golden screenshots.
+  Two modes for integrating with a Visualize instance:
+    - `upload-report` (default): bundle the Playwright report + test-results
+      and POST to /runs, with auto-detected branch/PR/commit/CI run URL.
+    - `fetch-baselines`: pull approved baselines for the project into the
+      working tree before Playwright runs, so `toHaveScreenshot()` reads
+      them as the source of truth (no goldens in git).
 
 branding:
   icon: 'eye'
   color: 'blue'
 
 inputs:
+  mode:
+    description: >-
+      `upload-report` (default) posts a Playwright run to the Visualize
+      ingest. `fetch-baselines` downloads approved baselines into the
+      working tree before tests run.
+    required: false
+    default: 'upload-report'
   url:
     description: >-
       Base URL of your Visualize ingest service
-      (e.g. https://ingest.visualize.example.com).
+      (e.g. https://visualize-api.example.com).
     required: true
   secret:
     description: 'Bearer token (`API_SECRET`) for the ingest service.'
     required: true
   project:
     description: >-
-      Project slug. Created on first upload; reused thereafter.
+      Project slug. The project must already exist (create it via the
+      viewer or MCP `create_project`); ingest also auto-creates on first
+      upload.
     required: true
   project-name:
     description: 'Human-friendly project name (defaults to the slug).'
@@ -27,25 +39,29 @@ inputs:
   report-path:
     description: >-
       Path to the Playwright `playwright-report/` directory. Defaults to
-      `./playwright-report`.
+      `./playwright-report`. Only used in `upload-report` mode.
     required: false
     default: './playwright-report'
   test-results-path:
     description: >-
       Path to Playwright's `test-results/` directory (videos, failure
       screenshots, traces). Bundled alongside the report so attachment
-      paths in report.json resolve. Defaults to `./test-results`.
+      paths in report.json resolve. Defaults to `./test-results`. Only
+      used in `upload-report` mode.
     required: false
     default: './test-results'
   baseline-path:
     description: >-
-      Optional: path to a directory of golden PNGs to upload as baselines.
-      Filenames (sans `.png`) become the snapshot name.
+      Optional (upload-report mode): path to a directory of golden PNGs
+      to upload as baselines. Each PNG is uploaded with its path relative
+      to this directory as the canonical baseline path. Skip this in
+      typical workflows — let approve-in-viewer be the only baseline
+      writer.
     required: false
   fail-on-error:
     description: >-
-      If true, the action fails the workflow when the upload fails.
-      Defaults to false so a flaky Visualize doesn't block your CI.
+      If true, the action fails the workflow when the upload (or fetch)
+      fails. Defaults to false so a flaky Visualize doesn't block CI.
     required: false
     default: 'false'
 
@@ -63,8 +79,65 @@ runs:
         fi
         echo "ci_run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
+    - name: Detect runner platform
+      id: plat
+      if: inputs.mode == 'upload-report' || inputs.mode == 'fetch-baselines'
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)   echo "platform=linux"  >> "$GITHUB_OUTPUT" ;;
+          macOS)   echo "platform=darwin" >> "$GITHUB_OUTPUT" ;;
+          Windows) echo "platform=win32"  >> "$GITHUB_OUTPUT" ;;
+          *)       echo "platform=linux"  >> "$GITHUB_OUTPUT" ;;
+        esac
+
+    - name: Fetch approved baselines from Visualize
+      if: inputs.mode == 'fetch-baselines'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Fetching approved baselines for ${{ inputs.project }} from ${{ inputs.url }}"
+        # 1. List approved baselines.
+        LIST_JSON="$RUNNER_TEMP/visualize-baselines.json"
+        set +e
+        STATUS=$(curl -sS -o "$LIST_JSON" -w '%{http_code}' \
+          -H "Authorization: Bearer ${{ inputs.secret }}" \
+          "${{ inputs.url }}/projects/${{ inputs.project }}/baselines")
+        CURL_RC=$?
+        set -e
+        if [ "$CURL_RC" != "0" ] || [ "$STATUS" != "200" ]; then
+          echo "::warning::Visualize baseline list returned status=$STATUS curl=$CURL_RC"
+          if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
+          exit 0
+        fi
+        COUNT=$(jq '.baselines | length' "$LIST_JSON")
+        echo "::notice title=Visualize::Fetched $COUNT approved baselines"
+        if [ "$COUNT" = "0" ]; then exit 0; fi
+        # 2. Iterate and download each PNG to its repo-relative path.
+        # `path` is supplied by the server and used verbatim. We refuse
+        # any path with '..' segments — defense in depth against a
+        # malicious or buggy ingest.
+        jq -r '.baselines[] | "\(.id)\t\(.path)"' "$LIST_JSON" | while IFS=$'\t' read -r ID PATH_REL; do
+          case "$PATH_REL" in
+            *'..'*|/*) echo "::warning::Skipping suspicious baseline path: $PATH_REL"; continue ;;
+          esac
+          DEST="$GITHUB_WORKSPACE/$PATH_REL"
+          mkdir -p "$(dirname "$DEST")"
+          set +e
+          STATUS=$(curl -sS -o "$DEST" -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ inputs.secret }}" \
+            "${{ inputs.url }}/baselines/$ID/image")
+          CURL_RC=$?
+          set -e
+          if [ "$CURL_RC" != "0" ] || [ "$STATUS" != "200" ]; then
+            echo "::warning::Baseline $ID download returned status=$STATUS curl=$CURL_RC"
+            rm -f "$DEST"
+            if [ "${{ inputs.fail-on-error }}" = "true" ]; then exit 1; fi
+          fi
+        done
+
     - name: Upload Playwright report
-      if: hashFiles(format('{0}/report.json', inputs.report-path)) != ''
+      if: inputs.mode == 'upload-report' && hashFiles(format('{0}/report.json', inputs.report-path)) != ''
       shell: bash
       run: |
         set -euo pipefail
@@ -92,8 +165,9 @@ runs:
           --arg commitSha "${{ steps.meta.outputs.commit }}" \
           --arg ciProvider "github" \
           --arg ciRunUrl "${{ steps.meta.outputs.ci_run_url }}" \
+          --arg platform "${{ steps.plat.outputs.platform }}" \
           --argjson prNumber "${{ steps.meta.outputs.pr || 'null' }}" \
-          '{projectSlug:$projectSlug, projectName:($projectName|select(.!="")), branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber} | with_entries(select(.value != null and .value != ""))')
+          '{projectSlug:$projectSlug, projectName:($projectName|select(.!="")), branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber, platform:$platform} | with_entries(select(.value != null and .value != ""))')
 
         echo "Posting report to ${{ inputs.url }}/runs"
         # Capture curl's exit code separately so a network/TLS failure
@@ -130,21 +204,26 @@ runs:
         fi
 
     - name: Upload baselines
-      if: inputs.baseline-path != ''
+      if: inputs.mode == 'upload-report' && inputs.baseline-path != ''
       shell: bash
       run: |
         set -euo pipefail
         DIR="${{ inputs.baseline-path }}"
         [ -d "$DIR" ] || { echo "baseline-path '$DIR' is not a directory"; exit 1; }
+        # Each PNG's relative path under DIR is uploaded as the canonical
+        # baseline path — fetch-baselines will write it back to that
+        # location on the next CI run.
         find "$DIR" -name '*.png' -type f | while read -r png; do
+          PATH_REL="${png#$DIR/}"
           NAME=$(basename "$png" .png)
           META=$(jq -nc \
             --arg projectSlug "${{ inputs.project }}" \
+            --arg path "$PATH_REL" \
             --arg name "$NAME" \
             --arg branch "${{ steps.meta.outputs.branch }}" \
             --arg commitSha "${{ steps.meta.outputs.commit }}" \
-            '{projectSlug:$projectSlug, name:$name, branch:$branch, commitSha:$commitSha}')
-          echo "Uploading baseline: $NAME"
+            '{projectSlug:$projectSlug, path:$path, name:$name, branch:$branch, commitSha:$commitSha}')
+          echo "Uploading baseline: $PATH_REL"
           set +e
           STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
             -X POST "${{ inputs.url }}/baselines" \

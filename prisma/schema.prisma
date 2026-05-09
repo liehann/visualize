@@ -15,6 +15,14 @@ model Project {
   githubRepo      String?
   uploadTokenHash String?
   tokenLastUsedAt DateTime?
+  // How approve-in-viewer reconstructs the on-disk path for a baseline.
+  // Substituted at approve time from attachment metadata + run platform.
+  // Defaults to the kuruvu_track convention; override per project if a
+  // consumer's playwright.config.ts uses a different layout.
+  // Variables: {testDir} {testFileDir} {testFileName} {testFileStem}
+  //            {arg} {projectName} {platform} {ext}
+  snapshotPathTemplate String   @default("{testDir}/__screenshots__/{testFileName}/{arg}-{projectName}-{platform}{ext}")
+  testDir              String   @default("tests/e2e")
   createdAt       DateTime   @default(now())
   runs            Run[]
   baselines       Baseline[]
@@ -48,6 +56,10 @@ model Run {
 
   rawConfig Json?
   metadata  Json?
+  // Runner OS — used by the approve handler to resolve {platform} in the
+  // project's snapshot path template. Defaults to "linux" because that's
+  // what GitHub-hosted runners are; the action always sets this explicitly.
+  platform  String   @default("linux")
 
   tests     TestCase[]
   createdAt DateTime   @default(now())
@@ -128,6 +140,12 @@ model Attachment {
   // For screenshot triplets (actual/expected/diff) attached to toHaveScreenshot()
   snapshotKind SnapshotKind?
   snapshotName String?
+  // The repo-relative path the consumer's playwright config expects on disk
+  // for this snapshot's BASELINE, computed at parse time from the project's
+  // snapshotPathTemplate + spec.file + projectName + run platform + arg.
+  // Approve uses this verbatim as Baseline.path so the next CI fetch lands
+  // the new baseline at the right location.
+  snapshotPath String?
 
   annotations  Annotation[]
 
@@ -176,19 +194,28 @@ enum SnapshotKind {
   diff
 }
 
-// Baselines (golden screenshots). One row per (project, name, browser, platform).
-// Updated either by direct CI upload (`POST /baselines`) or by approving a diff
-// in the viewer.
+// Baselines (golden screenshots). The canonical key is `(projectId, path)`:
+// `path` is the repo-relative file location the consumer's Playwright config
+// expects, computed by substituting the project's snapshotPathTemplate at
+// approve time. The viewer's approve flow is the only writer; no
+// `--update-snapshots` round-trip on the consumer side.
+//
+// `name` / `browser` / `platform` are kept as informational metadata and as
+// secondary lookup keys for the approve handler when the consumer's config
+// changes; `path` is what matters for fetch.
 model Baseline {
   id          String   @id @default(cuid())
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Repo-relative path the consumer's playwright config expects on disk.
+  // Example: tests/e2e/__screenshots__/golden.spec.ts/race-tracker-chromium-linux.png
+  path        String
   name        String
   // Default to "any" rather than null so the compound unique key works
   // cleanly. SQL UNIQUE treats NULL as not-equal-to-NULL, which would let
   // duplicate baselines slip in.
   browser     String   @default("any")
-  platform   String   @default("any")
+  platform    String   @default("any")
   storagePath String
   sizeBytes   Int?
   width       Int?
@@ -202,6 +229,6 @@ model Baseline {
   approvedBy               String?
   approvedAt               DateTime?
 
-  @@unique([projectId, name, browser, platform])
+  @@unique([projectId, path])
   @@index([projectId])
 }

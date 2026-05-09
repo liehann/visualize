@@ -190,17 +190,22 @@ function attachmentToParsed(
   //      Default JSON reporter behaviour. The action zips test-results/
   //      into the bundle so these resolve once we strip the host prefix.
   // Anchor on a segment we know exists in the bundle ("test-results/" or
-  // "data/"). For absolute paths with no anchor we drop the attachment
-  // rather than write a CI runner host path into the DB and into auth-
-  // gated URLs — that's an info leak with no upside, since the file
-  // wouldn't resolve on disk anyway.
+  // "data/"). For absolute paths with no anchor we set relPath = null
+  // and fall back to the inline body if the attachment carries one —
+  // Playwright sometimes emits BOTH `path` (absolute, runner-local) AND
+  // `body` (base64) for the same attachment, especially for failed
+  // toHaveScreenshot triplets. Dropping the attachment because the path
+  // didn't normalize would lose evidence we actually have. If neither
+  // resolves to something we can store, the attachment is then dropped
+  // at the bottom of this function.
   let relPath: string | null = null;
   if (a.path) {
     relPath = normalizeAttachmentPath(a.path);
-    if (relPath === null) return null;
   }
 
   const inlineBody = !relPath && a.body ? a.body : undefined;
+  // Truly nothing to store: no usable path, no inline body.
+  if (!relPath && !inlineBody) return null;
   const inlineExt = inlineBody
     ? extensionFor(a.contentType, a.name)
     : undefined;

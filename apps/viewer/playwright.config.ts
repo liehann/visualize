@@ -30,16 +30,20 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // The empty-state group keeps the project name `chromium` so the
+    // committed `*-chromium-linux.png` snapshot baselines under
+    // tests/<spec>.ts-snapshots/ still match. Renaming the project
+    // would silently break visual regression on every existing spec.
     {
-      name: 'empty',
+      name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       testIgnore: ['**/feature-tour.spec.ts'],
     },
     {
-      name: 'seeded',
+      name: 'chromium-seeded',
       use: { ...devices['Desktop Chrome'] },
       testMatch: ['**/feature-tour.spec.ts'],
-      dependencies: ['empty'],
+      dependencies: ['chromium'],
     },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL

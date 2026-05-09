@@ -167,7 +167,7 @@ runs:
           --arg ciRunUrl "${{ steps.meta.outputs.ci_run_url }}" \
           --arg platform "${{ steps.plat.outputs.platform }}" \
           --argjson prNumber "${{ steps.meta.outputs.pr || 'null' }}" \
-          '{projectSlug:$projectSlug, projectName:($projectName|select(.!="")), branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber, platform:$platform} | with_entries(select(.value != null and .value != ""))')
+          '{projectSlug:$projectSlug, projectName:$projectName, branch:$branch, commitSha:$commitSha, ciProvider:$ciProvider, ciRunUrl:$ciRunUrl, prNumber:$prNumber, platform:$platform} | with_entries(select(.value != null and .value != ""))')
 
         echo "Posting report to ${{ inputs.url }}/runs"
         # Capture curl's exit code separately so a network/TLS failure

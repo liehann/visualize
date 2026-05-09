@@ -21,6 +21,7 @@ export default defineConfig({
     exclude: ['tests/**', 'node_modules/**'],
     globals: false,
     restoreMocks: true,
+    setupFiles: ['./vitest.setup.ts'],
   },
   resolve: {
     alias: {

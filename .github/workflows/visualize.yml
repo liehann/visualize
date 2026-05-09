@@ -86,7 +86,10 @@ jobs:
 
       - name: Upload Playwright report to Visualize
         if: always()
-        uses: liehann/visualize@main
+        # Use the action from this checkout so changes to action.yml
+        # are validated by the same PR — avoids "merged a broken
+        # action, every workflow on @main is on fire" failure modes.
+        uses: ./
         with:
           url: https://visualize-api.phloots.com
           viewer-url: https://visualize.phloots.com

@@ -81,9 +81,9 @@ inputs:
   comment-on-pr:
     description: >-
       Whether to upsert a sticky PR comment summarizing the run. Requires
-      `viewer-url` and a `github-token` with `pull-requests: write` (the
-      default `${{ github.token }}` works for PRs from the same repo when
-      the workflow grants the permission).
+      `viewer-url` and a `github-token` with `pull-requests: write` — the
+      workflow's default GITHUB_TOKEN works for PRs from the same repo
+      when the job grants the permission.
     required: false
     default: 'true'
   set-status-check:
@@ -97,12 +97,13 @@ inputs:
     default: 'true'
   github-token:
     description: >-
-      Token used to post the PR comment. Defaults to `${{ github.token }}`.
-      For PRs from forks the default token is read-only — provide a
-      separate token (or run the comment step from a `pull_request_target`
-      workflow) to enable comments there.
+      Token used to post the PR comment + commit status. Falls back to
+      the workflow's GITHUB_TOKEN when unset, so most callers don't need
+      to pass anything. For PRs from forks the default token is
+      read-only — provide a separate token (or run from a
+      `pull_request_target` workflow) to enable comments there.
     required: false
-    default: ${{ github.token }}
+    default: ''
 
 runs:
   using: 'composite'
@@ -302,7 +303,7 @@ runs:
         steps.upload.outputs.run_id != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
         SLUG='${{ inputs.project }}'
@@ -371,7 +372,7 @@ runs:
         steps.upload.outputs.run_id != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
         VIEWER='${{ inputs.viewer-url }}'

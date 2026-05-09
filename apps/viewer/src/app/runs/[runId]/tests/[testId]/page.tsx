@@ -6,6 +6,8 @@ import { type SnapshotTriplet } from '@/components/snapshot-diff';
 import { DiffGallery } from '@/components/diff-gallery';
 import { AttachmentViewer } from '@/components/attachment-viewer';
 import { BranchPr } from '@/components/branch-pr';
+import { PendingBaselineCard } from '@/components/pending-baseline-card';
+import { findPendingBaselinesForTest } from '@/lib/pending-baselines';
 import { formatDuration } from '@/lib/format';
 import { attachmentSrc } from '@/lib/attachment-url';
 import type { Attachment } from '@prisma/client';
@@ -63,6 +65,16 @@ export default async function TestPage({
   // Non-snapshot attachments (videos, traces, errors, plain screenshots).
   const otherAttachments = finalAttachments.filter((a) => !a.snapshotName);
 
+  // First-time-write candidates: when a result errored with "snapshot
+  // doesn't exist… writing actual", Playwright wrote a fresh PNG that
+  // the action's baseline-path step then uploaded as a Baseline. Find
+  // those so reviewers can approve in-place instead of bouncing to the
+  // separate /pending page.
+  const pendingBaselines = await findPendingBaselinesForTest({
+    projectId,
+    errorMessages: test.results.map((r) => r.errorMessage),
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -100,6 +112,32 @@ export default async function TestPage({
       </div>
 
       {finalResult?.errorMessage && <ErrorPanel result={finalResult} />}
+
+      {pendingBaselines.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
+              New baseline{pendingBaselines.length === 1 ? '' : 's'} pending review
+            </h2>
+            <span className="text-[11px] text-fg-subtle">
+              First-time snapshot — approve to land it as the source of truth.
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {pendingBaselines.map((b) => (
+              <PendingBaselineCard
+                key={b.id}
+                baselineId={b.id}
+                name={b.name}
+                path={b.path}
+                src={attachmentSrc(b.storagePath)}
+                width={b.width}
+                height={b.height}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {triplets.length > 0 && (
         <section className="space-y-3">

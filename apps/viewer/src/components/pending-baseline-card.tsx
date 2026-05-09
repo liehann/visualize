@@ -41,10 +41,20 @@ export function PendingBaselineCard({
       if (res.ok) {
         setApproved(true);
         router.refresh();
-      } else {
-        const text = await res.text().catch(() => '');
-        setError(text || `approve failed (${res.status})`);
+        return;
       }
+      // Try to surface the server's `detail` if the response is JSON;
+      // fall back to plain text + status. Useful when the route is
+      // returning 500 — the new instrumented route includes the error
+      // message in the body.
+      let detail: string | null = null;
+      try {
+        const body = (await res.clone().json()) as { detail?: string; error?: string };
+        detail = body.detail ?? body.error ?? null;
+      } catch {
+        detail = (await res.text().catch(() => '')) || null;
+      }
+      setError(detail || `approve failed (${res.status})`);
     });
   };
 

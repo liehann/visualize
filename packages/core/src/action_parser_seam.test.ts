@@ -3,6 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { flattenSpecs, loadReport } from './parser.js';
 
 /**
@@ -105,21 +108,20 @@ describe('action → parser seam (custom outputDir round-trip)', () => {
     };
     await fs.writeFile(path.join(reportDir, 'report.json'), JSON.stringify(report));
 
-    // Replay the action's bundling logic. Keep this mirroring the
-    // bash in action.yml's "Upload Playwright report" step — if the
-    // action drifts, this test asserts the consequence.
+    // Replay the action's bundling logic by invoking the SAME shared
+    // shell script the action uses. The script's logic + this test's
+    // assertions live together — drift between them is impossible.
     bundleRoot = path.join(workspace, 'staging');
-    await fs.mkdir(bundleRoot);
-    // cp -R "$REPORT_DIR/." "$STAGING/"
-    execFileSync('cp', ['-R', `${reportDir}/.`, bundleRoot]);
-    // cp -R "$TEST_RESULTS_DIR" "$STAGING/test-results"
-    execFileSync('cp', ['-R', outputDir, path.join(bundleRoot, 'test-results')]);
-    // sed -i "s|${ABS_TEST_RESULTS}/|test-results/|g" report.json
-    const reportPath = path.join(bundleRoot, 'report.json');
-    const sedArgs = process.platform === 'darwin'
-      ? ['-i', '', `s|${outputDir}/|test-results/|g`, reportPath]
-      : ['-i', `s|${outputDir}/|test-results/|g`, reportPath];
-    execFileSync('sed', sedArgs);
+    const zipPath = path.join(workspace, 'bundle.zip');
+    const repoRoot = path.resolve(__dirname, '../../..');
+    const bundleScript = path.join(
+      repoRoot,
+      'scripts',
+      'bundle-playwright-report.sh',
+    );
+    execFileSync('bash', [bundleScript, reportDir, outputDir, bundleRoot, zipPath], {
+      stdio: 'pipe',
+    });
   });
 
   afterEach(async () => {

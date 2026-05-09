@@ -113,7 +113,8 @@ there were no visual changes. Set `set-status-check: false` to disable.
 Don't want the upload to ever fail your CI? Default `fail-on-error: false`
 means a Visualize hiccup is a warning, not a workflow failure.
 
-A canned example workflow lives at `.github/workflows/example.yml`.
+A canned example workflow lives at `examples/playwright-and-visualize.yml`
+— copy it into your repo's `.github/workflows/` and adjust paths.
 
 ## Authentik OIDC setup
 

@@ -17,6 +17,10 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // The shared Postgres + DATA_DIR is global state across spec files; running
+  // multiple workers races feature-tour's seeded project against home's
+  // empty-state assertion. Serialize across files too.
+  workers: 1,
   reporter: [
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['json', { outputFile: 'playwright-report/report.json' }],

@@ -233,6 +233,15 @@ async function seedRun(runId: string, opts: SeedOpts): Promise<void> {
 
   const report = await loadReport(bundleRel);
   const specs = flattenSpecs(report, bundleRel);
+  // The fixture's sign-in test is a "first-time snapshot" failure: retry 0
+  // writes the actual + diff + expected triplet, retry 1 only re-records
+  // video. The test-detail page intentionally renders the FINAL result's
+  // attachments only ("last attempt is what matters for approval"), so a
+  // single-attempt failure is the shape that exercises the diff gallery.
+  // Collapse to retry 0 — also the common drift case in production traffic.
+  for (const spec of specs) {
+    spec.results = spec.results.slice(0, 1);
+  }
   const rollup = rollupRun(specs);
 
   const project = await prisma.project.upsert({

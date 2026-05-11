@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { RunStatusBadge, TestStatusBadge } from '@/components/status-badge';
 import { BranchPr } from '@/components/branch-pr';
 import { formatDuration, formatRelativeTime } from '@/lib/format';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, GitCompare } from 'lucide-react';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { BulkApprove, type PendingDiff } from '@/components/bulk-approve';
 import { attachmentSrc } from '@/lib/attachment-url';
@@ -69,9 +69,18 @@ export default async function RunPage({
               />
             </div>
           </div>
-          <div className="text-right text-xs text-fg-subtle">
-            <div>{formatRelativeTime(run.createdAt)}</div>
-            <div className="font-mono">{formatDuration(run.durationMs)}</div>
+          <div className="flex flex-col items-end gap-2 text-xs text-fg-subtle">
+            <div className="text-right">
+              <div>{formatRelativeTime(run.createdAt)}</div>
+              <div className="font-mono">{formatDuration(run.durationMs)}</div>
+            </div>
+            <Link
+              href={`/runs/${run.id}/compare`}
+              className="inline-flex items-center gap-1.5 rounded border border-border bg-bg-panel px-2 py-1 text-xs text-fg hover:bg-bg-hover"
+            >
+              <GitCompare className="h-3.5 w-3.5" />
+              compare
+            </Link>
           </div>
         </div>
       </div>

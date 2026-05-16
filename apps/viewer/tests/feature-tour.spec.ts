@@ -167,7 +167,12 @@ test.describe.serial('PR feedback loop — real run, real lightbox, real compare
     await expect(
       page.getByText(/1 visual change pending review/i),
     ).toBeVisible();
-    await page.getByRole('button', { name: /approve all 1/i }).click();
+    // The banner now also offers run-wide "review N" step-through; the
+    // bulk path is the unqualified "approve all" (count moved off it).
+    await expect(
+      page.getByRole('button', { name: /^review 1$/i }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: /^approve all$/i }).click();
     const sheet = page.getByRole('heading', {
       name: /approve 1 visual change/i,
     });

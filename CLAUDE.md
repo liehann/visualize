@@ -451,6 +451,62 @@ having to remember it exists.
   drive Playwright through every interaction state and dump screenshots
   to `screenshots/` for review.
 
+### Done (session 4, 2026-05-15) — make the viewer real on real data
+
+Customer report: the polished demo (keyboard step-through + bulk
+approve) didn't seem to exist in the app. Root cause: the components
+*were* wired in, but the viewer only ever rendered snapshot imagery
+that Playwright embeds in the report — and Playwright embeds it only on
+visual **failure**. The uploaded golden `Baseline` (req #8) was stored
+but never used for display. Four fixes, all stemming from that root:
+
+- **`expected` now sourced from the `Baseline`**
+  (`apps/viewer/src/lib/triplet-baseline.ts`). On the test page and the
+  run-wide diff loader, any triplet missing a report-embedded `expected`
+  is backfilled from the golden (match on `projectId` + `name`). A
+  report-embedded expected still wins. Killed the "only new + diff, no
+  before" gap. Labelled `current baseline` in the side view + lightbox
+  so reviewers know the provenance. Unit-tested
+  (`triplet-baseline.test.ts`). No parser change — the expected file
+  genuinely isn't in the bundle; the Baseline is the correct source.
+- **Run-wide keyboard step-through review**
+  (`apps/viewer/src/components/bulk-approve.tsx`). The run page already
+  gathered every pending diff across every test; that whole list now
+  feeds the existing `DiffLightbox`. Banner offers **review N**
+  (steps across *tests* with `← →`, `A` approves + auto-advances,
+  end-of-list closes + refreshes) alongside **approve all**. This is
+  the demo loop, on real run data. `loadPendingDiffs` now also attaches
+  the baseline `expectedSrc` so the step-through shows before/after.
+- **Unified + explained the diff modes.** Inline `SnapshotDiff` lost
+  its confusing tab switcher — it's now a static expected|actual|diff
+  strip + a **compare** button into the lightbox where all interactive
+  modes live (one vocabulary). Lightbox `onion` → **difference** with a
+  one-line legend ("identical pixels turn black; anything that glows
+  changed"); per-mode tooltips; footer names each mode. `run-vs-run`'s
+  `overlay` tab renamed to `difference` + same legend for consistency.
+- **Per-project Baselines gallery**
+  (`apps/viewer/src/components/baseline-gallery.tsx`). The golden *is*
+  the current passing screenshot; the project page now shows a
+  browsable grid of every current baseline with a keyboard-steppable
+  full-screen viewer. Passing test pages (which have zero attachments)
+  now explain that and link to the gallery. Honest limitation:
+  Playwright emits no snapshot names on pass, so we can't map an
+  individual passing test → its exact goldens; the gallery is
+  per-project.
+
+- **Attachments section made usable.** The "confusing stuff" the
+  customer meant was actually `error-context` + `trace` (trace turned
+  out to be loved once seen). `error-context` rendered as an empty box
+  with only a "view raw" link; now `AttachmentViewer` is an async
+  server component that reads text/`error-context` content inline and
+  explains what error-context is (Playwright's page/ARIA snapshot at
+  failure). Attachment **screenshots** were tiny with no way to enlarge
+  — new `ExpandableImage` gives every one a full-screen zoom viewer
+  (Esc to close, click to toggle actual-size).
+
+Repo-wide typecheck clean, 54 viewer tests (+ core/ingest/mcp) green,
+viewer prod build green.
+
 ### What still wants doing (Claude prioritizes; stakeholder may redirect)
 
 1. **Embedded Playwright trace viewer.** Playwright ships `show-trace`

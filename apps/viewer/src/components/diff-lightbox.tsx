@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { SnapshotTriplet } from './snapshot-diff';
 
-export type LightboxView = 'side' | 'slider' | 'onion' | 'diff';
+export type LightboxView = 'side' | 'slider' | 'difference' | 'diff';
 
 type Props = {
   triplets: SnapshotTriplet[];
@@ -89,7 +89,7 @@ export function DiffLightbox({
       } else if (e.key === '2') {
         setView('slider');
       } else if (e.key === '3') {
-        setView('onion');
+        setView('difference');
       } else if (e.key === '4') {
         setView('diff');
       }
@@ -199,10 +199,13 @@ export function DiffLightbox({
           <span>approve</span>
           <span className="text-white/20">·</span>
           <Kbd>1</Kbd>
+          <span>side</span>
           <Kbd>2</Kbd>
+          <span>slider</span>
           <Kbd>3</Kbd>
+          <span>difference</span>
           <Kbd>4</Kbd>
-          <span>view</span>
+          <span>diff</span>
           <span className="text-white/20">·</span>
           <Kbd>Esc</Kbd>
           <span>close</span>
@@ -257,14 +260,24 @@ function ViewSwitcher({
   const has = {
     side: !!(triplet.expected || triplet.actual || triplet.diff),
     slider: !!(triplet.expected && triplet.actual),
-    onion: !!(triplet.expected && triplet.actual),
+    difference: !!(triplet.expected && triplet.actual),
     diff: !!triplet.diff,
   };
-  const items: { v: LightboxView; label: string; key: string }[] = [
-    { v: 'side', label: 'side', key: '1' },
-    { v: 'slider', label: 'slider', key: '2' },
-    { v: 'onion', label: 'onion', key: '3' },
-    { v: 'diff', label: 'diff', key: '4' },
+  const items: { v: LightboxView; label: string; key: string; title: string }[] = [
+    { v: 'side', label: 'side', key: '1', title: 'Expected, actual and diff side by side' },
+    {
+      v: 'slider',
+      label: 'slider',
+      key: '2',
+      title: 'Drag the handle to wipe between expected and actual',
+    },
+    {
+      v: 'difference',
+      label: 'difference',
+      key: '3',
+      title: 'Expected and actual blended: matching pixels go black, changes glow',
+    },
+    { v: 'diff', label: 'diff', key: '4', title: "Playwright's computed diff image" },
   ];
   return (
     <div className="flex items-center rounded-md border border-white/10 bg-white/5 p-0.5 text-[11px]">
@@ -273,7 +286,7 @@ function ViewSwitcher({
           key={it.v}
           onClick={() => onChange(it.v)}
           disabled={!has[it.v]}
-          title={`${it.label} (${it.key})`}
+          title={`${it.title} · key ${it.key}`}
           className={cn(
             'rounded px-2 py-1 transition-colors',
             view === it.v
@@ -299,13 +312,17 @@ function Kbd({ children }: { children: React.ReactNode }) {
 function Stage({ view, triplet }: { view: LightboxView; triplet: SnapshotTriplet }) {
   if (view === 'side') return <SideStage triplet={triplet} />;
   if (view === 'slider') return <SliderStage triplet={triplet} />;
-  if (view === 'onion') return <OnionStage triplet={triplet} />;
+  if (view === 'difference') return <DifferenceStage triplet={triplet} />;
   return <DiffStage triplet={triplet} />;
 }
 
 function SideStage({ triplet }: { triplet: SnapshotTriplet }) {
   const cells = [
-    { label: 'expected', src: triplet.expected?.src, ring: 'ring-fg-subtle/40' },
+    {
+      label: triplet.expected?.fromBaseline ? 'expected · current baseline' : 'expected',
+      src: triplet.expected?.src,
+      ring: 'ring-fg-subtle/40',
+    },
     { label: 'actual', src: triplet.actual?.src, ring: 'ring-accent/50' },
     { label: 'diff', src: triplet.diff?.src, ring: 'ring-danger/50' },
   ].filter((c) => c.src);
@@ -354,7 +371,7 @@ function DiffStage({ triplet }: { triplet: SnapshotTriplet }) {
   );
 }
 
-function OnionStage({ triplet }: { triplet: SnapshotTriplet }) {
+function DifferenceStage({ triplet }: { triplet: SnapshotTriplet }) {
   if (!triplet.expected || !triplet.actual) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-fg-subtle">
@@ -363,8 +380,13 @@ function OnionStage({ triplet }: { triplet: SnapshotTriplet }) {
     );
   }
   return (
-    <div className="h-full p-3">
-      <div className="relative h-full overflow-hidden rounded ring-1 ring-accent/40">
+    <div className="flex h-full flex-col gap-2 p-3">
+      <div className="shrink-0 rounded border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-fg-subtle">
+        Expected and actual blended together —{' '}
+        <span className="text-fg-muted">identical pixels turn black</span>; anything
+        that <span className="text-fg-muted">glows</span> is what changed.
+      </div>
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded ring-1 ring-accent/40">
         <ZoomPan
           src={triplet.expected.src}
           alt="expected"

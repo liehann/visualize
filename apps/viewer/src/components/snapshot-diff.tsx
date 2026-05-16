@@ -3,13 +3,15 @@
 import { useState, useTransition } from 'react';
 import { Check, Loader2, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 export type SnapshotTriplet = {
   snapshotName: string;
   actual?: { id: string; src: string };
-  expected?: { id: string; src: string };
+  // `id` is optional because `expected` can be sourced from the uploaded
+  // golden Baseline (which has no Playwright attachment id) when the report
+  // didn't embed an expected image. `fromBaseline` lets the UI label it.
+  expected?: { id?: string; src: string; fromBaseline?: boolean };
   diff?: { id: string; src: string };
   diffPercent?: number;
   diffPixels?: number;
@@ -23,7 +25,6 @@ type Props = {
 };
 
 export function SnapshotDiff({ triplet, onOpen, onApproved }: Props) {
-  const [view, setView] = useState<'side' | 'overlay' | 'diff'>('side');
   const [approved, setApproved] = useState(triplet.approved ?? false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -63,28 +64,15 @@ export function SnapshotDiff({ triplet, onOpen, onApproved }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as typeof view)}>
-            <TabsList className="h-7">
-              <TabsTrigger className="px-2 text-[11px]" value="side">
-                side
-              </TabsTrigger>
-              <TabsTrigger className="px-2 text-[11px]" value="overlay">
-                overlay
-              </TabsTrigger>
-              <TabsTrigger className="px-2 text-[11px]" value="diff">
-                diff
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
           {onOpen && (
             <Button
               variant="secondary"
               size="sm"
               onClick={onOpen}
-              title="Open lightbox (click any image)"
+              title="Open full compare — slider, difference, zoom & pan (or click any image)"
             >
               <Maximize2 className="h-3.5 w-3.5" />
-              expand
+              compare
             </Button>
           )}
           {approved ? (
@@ -116,9 +104,7 @@ export function SnapshotDiff({ triplet, onOpen, onApproved }: Props) {
         </div>
       )}
       <div className="p-4">
-        {view === 'side' && <SideView triplet={triplet} onOpen={onOpen} />}
-        {view === 'overlay' && <OverlayView triplet={triplet} onOpen={onOpen} />}
-        {view === 'diff' && <DiffView triplet={triplet} onOpen={onOpen} />}
+        <SideView triplet={triplet} onOpen={onOpen} />
       </div>
     </div>
   );
@@ -148,11 +134,13 @@ function DiffPercentBadge({ percent }: { percent: number }) {
 
 function ImageFrame({
   label,
+  note,
   src,
   variant = 'neutral',
   onOpen,
 }: {
   label: string;
+  note?: string;
   src?: string;
   variant?: 'neutral' | 'expected' | 'actual' | 'diff';
   onOpen?: () => void;
@@ -169,6 +157,11 @@ function ImageFrame({
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-fg-subtle">
         {label}
+        {note && (
+          <span className="rounded border border-border px-1 text-[9px] normal-case tracking-normal text-fg-subtle">
+            {note}
+          </span>
+        )}
       </div>
       <div
         className={cn(
@@ -205,55 +198,16 @@ function SideView({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <ImageFrame label="expected" src={triplet.expected?.src} variant="expected" onOpen={onOpen} />
+      <ImageFrame
+        label="expected"
+        note={triplet.expected?.fromBaseline ? 'current baseline' : undefined}
+        src={triplet.expected?.src}
+        variant="expected"
+        onOpen={onOpen}
+      />
       <ImageFrame label="actual" src={triplet.actual?.src} variant="actual" onOpen={onOpen} />
       <ImageFrame label="diff" src={triplet.diff?.src} variant="diff" onOpen={onOpen} />
     </div>
   );
 }
 
-function OverlayView({
-  triplet,
-  onOpen,
-}: {
-  triplet: SnapshotTriplet;
-  onOpen?: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        'group relative w-full overflow-hidden rounded border border-border bg-black/40',
-        onOpen ? 'cursor-zoom-in' : '',
-      )}
-      onClick={onOpen}
-    >
-      {triplet.expected?.src && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={triplet.expected.src} alt="expected" className="block h-auto w-full" />
-      )}
-      {triplet.actual?.src && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={triplet.actual.src}
-          alt="actual overlay"
-          className="absolute inset-0 block h-full w-full mix-blend-difference"
-        />
-      )}
-      {onOpen && (
-        <span className="pointer-events-none absolute right-1.5 top-1.5 rounded border border-white/10 bg-black/50 p-1 text-white/70 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-          <Maximize2 className="h-3.5 w-3.5" />
-        </span>
-      )}
-    </div>
-  );
-}
-
-function DiffView({
-  triplet,
-  onOpen,
-}: {
-  triplet: SnapshotTriplet;
-  onOpen?: () => void;
-}) {
-  return <ImageFrame label="diff" src={triplet.diff?.src} variant="diff" onOpen={onOpen} />;
-}

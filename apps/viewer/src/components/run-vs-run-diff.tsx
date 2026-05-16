@@ -23,7 +23,7 @@ type Props = {
 };
 
 export function RunVsRunDiff({ triplet, labelA, labelB, hrefA, hrefB }: Props) {
-  const [view, setView] = useState<'side' | 'overlay'>('side');
+  const [view, setView] = useState<'side' | 'difference'>('side');
 
   return (
     <div className="rounded-lg border border-border bg-bg-panel">
@@ -41,8 +41,8 @@ export function RunVsRunDiff({ triplet, labelA, labelB, hrefA, hrefB }: Props) {
               <TabsTrigger className="px-2 text-[11px]" value="side">
                 side
               </TabsTrigger>
-              <TabsTrigger className="px-2 text-[11px]" value="overlay">
-                overlay
+              <TabsTrigger className="px-2 text-[11px]" value="difference">
+                difference
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -70,7 +70,13 @@ export function RunVsRunDiff({ triplet, labelA, labelB, hrefA, hrefB }: Props) {
             />
           </div>
         ) : (
-          <OverlayView a={triplet.actualA} b={triplet.actualB} />
+          <div className="space-y-2">
+            <div className="rounded border border-border bg-bg-hover/40 px-3 py-1.5 text-[11px] text-fg-subtle">
+              {labelA} and {labelB} blended — identical pixels turn black; anything
+              that glows changed between the two runs.
+            </div>
+            <OverlayView a={triplet.actualA} b={triplet.actualB} />
+          </div>
         )}
       </div>
     </div>

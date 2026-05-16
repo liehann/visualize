@@ -5,6 +5,8 @@ import { RunStatusBadge } from '@/components/status-badge';
 import { BranchPr } from '@/components/branch-pr';
 import { formatRelativeTime } from '@/lib/format';
 import { CircleAlert } from 'lucide-react';
+import { BaselineGallery } from '@/components/baseline-gallery';
+import { attachmentSrc } from '@/lib/attachment-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +19,21 @@ export default async function ProjectPage({
   const project = await prisma.project.findUnique({ where: { slug } });
   if (!project) notFound();
 
-  const [pendingCount, approvedCount, recentRuns] = await Promise.all([
+  const [pendingCount, baselines, recentRuns] = await Promise.all([
     prisma.baseline.count({
       where: { projectId: project.id, approvedAt: null },
     }),
-    prisma.baseline.count({
-      where: { projectId: project.id, approvedAt: { not: null } },
+    prisma.baseline.findMany({
+      where: { projectId: project.id },
+      orderBy: { name: 'asc' },
+      take: 300,
+      select: {
+        id: true,
+        name: true,
+        browser: true,
+        platform: true,
+        storagePath: true,
+      },
     }),
     prisma.run.findMany({
       where: { projectId: project.id },
@@ -81,14 +92,30 @@ export default async function ProjectPage({
       )}
 
       <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
-            Recent runs
+            Current baselines
           </h2>
           <p className="text-xs text-fg-subtle">
-            {approvedCount} approved baseline{approvedCount === 1 ? '' : 's'}
+            {baselines.length} screenshot{baselines.length === 1 ? '' : 's'} — what
+            every passing snapshot looks like today
           </p>
         </div>
+        <BaselineGallery
+          baselines={baselines.map((b) => ({
+            id: b.id,
+            name: b.name,
+            browser: b.browser,
+            platform: b.platform,
+            src: attachmentSrc(b.storagePath),
+          }))}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
+          Recent runs
+        </h2>
         {recentRuns.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border bg-bg-panel/60 px-4 py-8 text-center text-sm text-fg-subtle">
             No runs uploaded yet.

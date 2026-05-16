@@ -70,7 +70,7 @@ describe('<BulkApprove>', () => {
 
   it('opening the sheet lists every pending diff with its impact badge', async () => {
     const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
-    fireEvent.click(findButton(utils.container, /approve all 2/i));
+    fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
 
     await waitForBody('Approve 2 visual changes');
     expect(bodyContains('home/dashboard.png')).toBe(true);
@@ -95,7 +95,7 @@ describe('<BulkApprove>', () => {
     );
     const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
 
-    fireEvent.click(findButton(utils.container, /approve all 2/i));
+    fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');
 
     const sheetApproves = findButtonAll(utils.container, /^\s*approve all\s*$/i);
@@ -127,7 +127,7 @@ describe('<BulkApprove>', () => {
     );
     const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
 
-    fireEvent.click(findButton(utils.container, /approve all 2/i));
+    fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');
 
     const sheetApproves = findButtonAll(utils.container, /^\s*approve all\s*$/i);
@@ -139,6 +139,34 @@ describe('<BulkApprove>', () => {
     expect(screen.getByText(/1 approved · 1 failed/i)).toBeTruthy();
   });
 
+  it('run-wide review: opens a lightbox, steps across tests, and approves by attachment', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response('', { status: 200 }));
+    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+
+    fireEvent.click(findButton(utils.container, /^\s*review 2\s*$/i));
+
+    // The lightbox portals to document.body and shows the first change,
+    // prefixed with its test so you know where you are in the run.
+    await waitForBody('home > renders — home/dashboard.png');
+    expect(screen.getByRole('dialog', { name: /snapshot diff/i })).toBeTruthy();
+
+    // ← → walks across tests without going back to the run list.
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitForBody('auth > sign-in — auth/sign-in.png');
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitForBody('home > renders — home/dashboard.png');
+
+    // A approves the displayed change against its actual attachment.
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/approve/a1', {
+        method: 'POST',
+      });
+    });
+  });
+
   it('on request-level error: footer shows 0 approved · 1 failed', async () => {
     // The component models a network/auth failure as a single
     // synthetic failure row (name `(request)`) so the footer count
@@ -148,7 +176,7 @@ describe('<BulkApprove>', () => {
     vi.spyOn(global, 'fetch').mockResolvedValue(new Response('', { status: 500 }));
     const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
 
-    fireEvent.click(findButton(utils.container, /approve all 2/i));
+    fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');
 
     const sheetApproves = findButtonAll(utils.container, /^\s*approve all\s*$/i);

@@ -136,7 +136,7 @@ describe('<DiffLightbox>', () => {
     });
   });
 
-  it('keyboard 1/3/4 switches the view (slider→side / onion / diff)', () => {
+  it('keyboard 1/3/4 switches the view (slider→side / difference / diff)', () => {
     renderLightbox();
     // Default for full triplet is "slider" view; pressing "1" goes to side.
     fireEvent.keyDown(window, { key: '1' });

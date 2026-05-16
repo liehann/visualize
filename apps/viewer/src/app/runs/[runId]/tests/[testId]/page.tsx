@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { TestStatusBadge } from '@/components/status-badge';
 import { type SnapshotTriplet } from '@/components/snapshot-diff';
 import { DiffGallery } from '@/components/diff-gallery';
+import { fillExpectedFromBaselines } from '@/lib/triplet-baseline';
 import { AttachmentViewer } from '@/components/attachment-viewer';
 import { BranchPr } from '@/components/branch-pr';
 import { PendingBaselineCard } from '@/components/pending-baseline-card';
@@ -61,6 +62,10 @@ export default async function TestPage({
   for (const t of triplets) {
     t.approved = approvedNames.has(t.snapshotName);
   }
+
+  // Playwright rarely ships a usable `expected` image; the golden Baseline
+  // is the real "before". Backfill so the diff viewer always has all three.
+  const tripletsWithExpected = fillExpectedFromBaselines(triplets, baselines);
 
   // Non-snapshot attachments (videos, traces, errors, plain screenshots).
   const otherAttachments = finalAttachments.filter((a) => !a.snapshotName);
@@ -144,7 +149,7 @@ export default async function TestPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
             Visual diffs
           </h2>
-          <DiffGallery triplets={triplets} />
+          <DiffGallery triplets={tripletsWithExpected} />
         </section>
       )}
 
@@ -160,6 +165,24 @@ export default async function TestPage({
           </div>
         </section>
       )}
+
+      {!finalResult?.errorMessage &&
+        triplets.length === 0 &&
+        otherAttachments.length === 0 &&
+        pendingBaselines.length === 0 && (
+          <section className="rounded-lg border border-border bg-bg-panel px-4 py-6 text-sm text-fg-subtle">
+            This test passed and Playwright captured no attachments — a green
+            snapshot emits no actual/expected/diff images. The screenshot it
+            asserted against is the current golden, browsable in{' '}
+            <Link
+              href={`/projects/${test.run.project.slug}`}
+              className="text-fg-muted underline underline-offset-2 hover:text-fg"
+            >
+              {test.run.project.name} baselines
+            </Link>
+            .
+          </section>
+        )}
 
       {test.results.length > 1 && (
         <section className="space-y-3">

@@ -161,6 +161,27 @@ async function loadPendingDiffs(
     });
   }
 
+  // The golden Baseline is the real "before" image — Playwright's report
+  // rarely carries a usable expected. Map snapshot name → baseline src so
+  // the run-wide review flow can show before/after, not just after/diff.
+  const baselineSrcByName = new Map<string, string>();
+  const snapshotNames = [
+    ...new Set(
+      actuals
+        .map((a) => a.snapshotName)
+        .filter((n): n is string => !!n),
+    ),
+  ];
+  if (snapshotNames.length > 0) {
+    const bls = await prisma.baseline.findMany({
+      where: { projectId, name: { in: snapshotNames } },
+      select: { name: true, storagePath: true },
+    });
+    for (const b of bls) {
+      baselineSrcByName.set(b.name, attachmentSrc(b.storagePath));
+    }
+  }
+
   const approvedFromIds = new Set(
     (
       await prisma.baseline.findMany({
@@ -191,6 +212,7 @@ async function loadPendingDiffs(
         testTitle: tc.titlePath,
         testId: tc.id,
         actualSrc: attachmentSrc(a.storagePath),
+        expectedSrc: baselineSrcByName.get(a.snapshotName ?? ''),
         diffSrc: d?.src,
         diffPercent: d?.percent,
       };

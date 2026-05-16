@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, X, AlertTriangle } from 'lucide-react';
+import { Check, Loader2, X, AlertTriangle, PlaySquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { DiffLightbox } from '@/components/diff-lightbox';
+import type { SnapshotTriplet } from '@/components/snapshot-diff';
 
 function BulkDiffBadge({ percent }: { percent: number }) {
   const tone =
@@ -34,6 +36,7 @@ export type PendingDiff = {
   testTitle: string;
   testId: string;
   actualSrc: string;
+  expectedSrc?: string;
   diffSrc?: string;
   diffPercent?: number;
 };
@@ -51,6 +54,75 @@ export function BulkApprove({ runId, pending }: Props) {
   >(null);
   const [pendingFetch, start] = useTransition();
   const router = useRouter();
+
+  // Run-wide step-through review: every pending diff across every test in
+  // one keyboard-driven lightbox. ← → walks across tests, A approves and
+  // auto-advances. This is the fast triage loop.
+  const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+  const touchedRef = useRef(false);
+
+  const reviewTriplets = useMemo<SnapshotTriplet[]>(
+    () =>
+      pending.map((p) => ({
+        snapshotName: `${p.testTitle} — ${p.snapshotName}`,
+        actual: { id: p.attachmentId, src: p.actualSrc },
+        expected: p.expectedSrc
+          ? { src: p.expectedSrc, fromBaseline: true }
+          : undefined,
+        diff: p.diffSrc
+          ? { id: `${p.attachmentId}-diff`, src: p.diffSrc }
+          : undefined,
+        diffPercent: p.diffPercent,
+        approved: approvedIds.has(p.attachmentId),
+      })),
+    [pending, approvedIds],
+  );
+
+  const closeReview = useCallback(() => {
+    setReviewIndex(null);
+    if (touchedRef.current) {
+      touchedRef.current = false;
+      router.refresh();
+    }
+  }, [router]);
+
+  const onReviewApprove = useCallback(
+    async (t: SnapshotTriplet) => {
+      const id = t.actual?.id;
+      if (!id) return { ok: false, error: 'no actual image' };
+      const res = await fetch(`/api/approve/${id}`, { method: 'POST' });
+      if (!res.ok) {
+        let detail: string | null = null;
+        try {
+          const body = (await res.clone().json()) as {
+            detail?: string;
+            error?: string;
+          };
+          detail = body.detail ?? body.error ?? null;
+        } catch {
+          detail = (await res.text().catch(() => '')) || null;
+        }
+        return { ok: false, error: detail || `approve failed (${res.status})` };
+      }
+      touchedRef.current = true;
+      setApprovedIds((prev) => new Set(prev).add(id));
+      // Let the green "approved" land, then advance to the next change so a
+      // sweep is just: look, A, look, A. End of list closes + refreshes.
+      setTimeout(() => {
+        setReviewIndex((cur) => {
+          if (cur === null) return cur;
+          const next = cur + 1;
+          if (next < pending.length) return next;
+          touchedRef.current = false;
+          router.refresh();
+          return null;
+        });
+      }, 250);
+      return { ok: true };
+    },
+    [pending.length, router],
+  );
 
   if (pending.length === 0) return null;
 
@@ -89,14 +161,40 @@ export function BulkApprove({ runId, pending }: Props) {
             {pending.length} visual change{pending.length === 1 ? '' : 's'} pending review
           </div>
           <div className="mt-0.5 text-xs text-fg-subtle">
-            Review individually or approve them all in one shot.
+            Step through every change across the run with the keyboard, or
+            approve them all in one shot.
           </div>
         </div>
-        <Button variant="success" size="sm" onClick={() => setOpen(true)}>
-          <Check className="h-3.5 w-3.5" />
-          approve all {pending.length}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              setApprovedIds(new Set());
+              touchedRef.current = false;
+              setReviewIndex(0);
+            }}
+            title="Open the run-wide review lightbox (← → to step, A to approve)"
+          >
+            <PlaySquare className="h-3.5 w-3.5" />
+            review {pending.length}
+          </Button>
+          <Button variant="success" size="sm" onClick={() => setOpen(true)}>
+            <Check className="h-3.5 w-3.5" />
+            approve all
+          </Button>
+        </div>
       </div>
+
+      {reviewIndex !== null && (
+        <DiffLightbox
+          triplets={reviewTriplets}
+          index={reviewIndex}
+          onIndexChange={setReviewIndex}
+          onClose={closeReview}
+          onApprove={onReviewApprove}
+        />
+      )}
 
       {open && (
         <div

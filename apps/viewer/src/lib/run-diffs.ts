@@ -9,6 +9,7 @@ export type RunDiff = {
   testTitle: string;
   actualSrc: string;
   expectedSrc?: string;
+  expectedFromBaseline?: boolean;
   diffSrc?: string;
   diffPercent?: number;
   approved: boolean;
@@ -56,6 +57,22 @@ export async function loadRunDiffs(
     });
   }
 
+  // Report-embedded `expected` (Playwright attaches it on many diff
+  // failures). Preferred over the Baseline when present so the slider /
+  // difference views work even before a golden is uploaded.
+  const expectedByKey = new Map<string, string>();
+  const expectedAttachments = await prisma.attachment.findMany({
+    where: { snapshotKind: 'expected', testResult: { testCase: { runId } } },
+    include: { testResult: true },
+  });
+  for (const e of expectedAttachments) {
+    if (!e.snapshotName) continue;
+    expectedByKey.set(
+      `${e.testResult.testCaseId}::${e.snapshotName}`,
+      attachmentSrc(e.storagePath),
+    );
+  }
+
   // The golden Baseline is the real "before" — Playwright's report rarely
   // carries a usable expected. Map snapshot name → baseline src.
   const snapshotNames = [
@@ -88,7 +105,11 @@ export async function loadRunDiffs(
     .filter((a) => !!a.snapshotName)
     .map((a) => {
       const tc = a.testResult.testCase;
-      const d = diffByKey.get(`${a.testResult.testCaseId}::${a.snapshotName}`);
+      const key = `${a.testResult.testCaseId}::${a.snapshotName}`;
+      const d = diffByKey.get(key);
+      const embeddedExpected = expectedByKey.get(key);
+      const baselineExpected = baselineSrcByName.get(a.snapshotName ?? '');
+      const expectedSrc = embeddedExpected ?? baselineExpected;
       return {
         attachmentId: a.id,
         snapshotName: a.snapshotName ?? '',
@@ -96,7 +117,8 @@ export async function loadRunDiffs(
         testTitle: tc.titlePath,
         testStatus: tc.status,
         actualSrc: attachmentSrc(a.storagePath),
-        expectedSrc: baselineSrcByName.get(a.snapshotName ?? ''),
+        expectedSrc,
+        expectedFromBaseline: !embeddedExpected && !!baselineExpected,
         diffSrc: d?.src,
         diffPercent: d?.percent,
         approved: approvedFromIds.has(a.id),
@@ -126,7 +148,9 @@ export function runDiffsToTriplets(
     testTitle: d.testTitle,
     testHref: hrefFor?.(d),
     actual: { id: d.attachmentId, src: d.actualSrc },
-    expected: d.expectedSrc ? { src: d.expectedSrc, fromBaseline: true } : undefined,
+    expected: d.expectedSrc
+      ? { src: d.expectedSrc, fromBaseline: d.expectedFromBaseline ?? false }
+      : undefined,
     diff: d.diffSrc ? { id: `${d.attachmentId}-diff`, src: d.diffSrc } : undefined,
     diffPercent: d.diffPercent,
     approved: d.approved,

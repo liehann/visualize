@@ -593,10 +593,21 @@ across the whole run, and approve goldens **before** CI runs.
   (a run of only first-time goldens — e.g. a `push:local` dogfood run —
   now surfaces the review UI instead of nothing).
 - **Navigation ergonomics.** "back to run" / "all runs" are bordered
-  button targets, not tiny text. The "Review N goldens" launcher now also
-  renders on **every test page** (test page loads the run-wide list
-  unconditionally), so re-approving never requires bouncing back to the
-  run.
+  button targets, not tiny text. The no-bounce need is met by the
+  **cross-test lightbox nav**: opening any diff on a test page steps
+  `← →` across every diff in the run and approves inline, so you never
+  return to the run page to do the next one.
+  - **Gotcha (don't re-add):** a second `<BulkApprove>` launcher on the
+    test page caused the *run page's* `BulkApprove` to **remount** after
+    client-side nav (two instances of the same client component across an
+    App-Router segment change reset its `open` state — the approve-all
+    sheet flashed and vanished). Dropped it; cross-test nav already
+    covers the use case.
+- **`loadRunDiffs` prefers report-embedded `expected`** over the Baseline
+  (falling back to it), so the slider / difference views work in the
+  run-wide review even before a golden is uploaded. Without this the
+  cross-test lightbox lost the "before" image on report-embedded-expected
+  runs (caught by the dogfood feature-tour).
 - **Dev `DATA_DIR` gotcha documented** (relative `./data` resolves per
   cwd → invisible images). See the Local dev callout above.
 

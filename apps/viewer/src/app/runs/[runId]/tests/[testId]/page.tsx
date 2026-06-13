@@ -4,7 +4,6 @@ import { prisma } from '@/lib/db';
 import { TestStatusBadge } from '@/components/status-badge';
 import { type SnapshotTriplet } from '@/components/snapshot-diff';
 import { DiffGallery } from '@/components/diff-gallery';
-import { BulkApprove } from '@/components/bulk-approve';
 import { fillExpectedFromBaselines } from '@/lib/triplet-baseline';
 import { loadRunDiffs, runDiffsToTriplets } from '@/lib/run-diffs';
 import { ChevronLeft } from 'lucide-react';
@@ -71,12 +70,15 @@ export default async function TestPage({
   const tripletsWithExpected = fillExpectedFromBaselines(triplets, baselines);
 
   // Run-wide diff list so opening one diff lets you step back/forth across
-  // every failed test in this run, and so the review launcher is reachable
-  // from any test page (no bouncing back to the run to approve the next one).
-  const navTriplets = runDiffsToTriplets(
-    await loadRunDiffs(runId, projectId),
-    (d) => `/runs/${runId}/tests/${d.testId}`,
-  );
+  // every failed test in this run — approve the whole run from one test's
+  // lightbox without bouncing back to the run page.
+  const navTriplets =
+    triplets.length > 0
+      ? runDiffsToTriplets(
+          await loadRunDiffs(runId, projectId),
+          (d) => `/runs/${runId}/tests/${d.testId}`,
+        )
+      : [];
 
   // Non-snapshot attachments (videos, traces, errors, plain screenshots).
   const otherAttachments = finalAttachments.filter((a) => !a.snapshotName);
@@ -127,8 +129,6 @@ export default async function TestPage({
           </div>
         </div>
       </div>
-
-      <BulkApprove runId={runId} triplets={navTriplets} />
 
       {finalResult?.errorMessage && <ErrorPanel result={finalResult} />}
 

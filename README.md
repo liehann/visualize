@@ -116,6 +116,42 @@ means a Visualize hiccup is a warning, not a workflow failure.
 A canned example workflow lives at `examples/playwright-and-visualize.yml`
 — copy it into your repo's `.github/workflows/` and adjust paths.
 
+## Approve diffs locally, before CI (`pnpm push:local`)
+
+Waiting for CI to fail just to approve an intended visual change is slow:
+push, wait minutes, approve, re-run. Instead, push a **local** run and
+approve before you even open the PR:
+
+```bash
+# 1. Run Playwright locally (writes playwright-report/ + test-results/)
+npx playwright test
+
+# 2. Push that run to your Visualize instance as a branch run
+pnpm push:local
+#   → ✓ Uploaded. Review + approve diffs here:
+#       https://visualize.example.com/runs/<id>
+
+# 3. Open the link, hit "review" on the run page to step every diff
+#    across every test (← →, A to approve), and approve the intended ones.
+```
+
+Branch + commit are auto-detected from git; the run is tagged
+`ciProvider: local`. Config comes from flags or the environment:
+
+| Flag | Env fallback | Meaning |
+| --- | --- | --- |
+| `--url` | `VISUALIZE_INGEST_URL` / `INGEST_PUBLIC_URL` | ingest base URL |
+| `--secret` | `VISUALIZE_TOKEN` / `API_SECRET` | Bearer token |
+| `--project` | `VISUALIZE_PROJECT` | project slug |
+| `--viewer-url` | `VIEWER_URL` | for the printed deep-link |
+| `--report` | — | default `./playwright-report` |
+| `--test-results` | — | default `./test-results` |
+
+Approving in the viewer writes the **hosted baseline**. On your next CI
+run, the action's `fetch-baselines` mode (`mode: fetch-baselines`, run
+before `playwright test`) pulls those approved baselines into the working
+tree, so the run passes first try — no failed CI, no full rerun.
+
 ## Authentik OIDC setup
 
 In Authentik:

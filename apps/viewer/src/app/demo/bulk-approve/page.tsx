@@ -1,4 +1,5 @@
-import { BulkApprove, type PendingDiff } from '@/components/bulk-approve';
+import { BulkApprove } from '@/components/bulk-approve';
+import type { SnapshotTriplet } from '@/components/snapshot-diff';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,47 +19,28 @@ function thumbSvg(label: string, color: string) {
 </svg>`);
 }
 
-const pending: PendingDiff[] = [
-  {
-    attachmentId: 'demo-1',
-    snapshotName: 'home/dashboard.png',
-    testTitle: 'home > dashboard renders for signed-in user',
-    testId: 'tc-1',
-    actualSrc: thumbSvg('home/dashboard', '#1f1f24'),
-    diffPercent: 12.4,
-  },
-  {
-    attachmentId: 'demo-2',
-    snapshotName: 'auth/sign-in.png',
-    testTitle: 'auth > sign-in / form',
-    testId: 'tc-2',
-    actualSrc: thumbSvg('auth/sign-in', '#0e1422'),
-    diffPercent: 5.2,
-  },
-  {
-    attachmentId: 'demo-3',
-    snapshotName: 'projects/empty-state.png',
-    testTitle: 'projects > empty state',
-    testId: 'tc-3',
-    actualSrc: thumbSvg('projects/empty', '#0c0e12'),
-    diffPercent: 0.04,
-  },
-  {
-    attachmentId: 'demo-4',
-    snapshotName: 'runs/detail/header.png',
-    testTitle: 'runs > detail header shows branch + PR',
-    testId: 'tc-4',
-    actualSrc: thumbSvg('runs/detail', '#16161a'),
-    diffPercent: 1.8,
-  },
-  {
-    attachmentId: 'demo-5',
-    snapshotName: 'runs/detail/footer.png',
-    testTitle: 'runs > detail / footer test list',
-    testId: 'tc-4',
-    actualSrc: thumbSvg('runs/footer', '#1a1a1f'),
-    diffPercent: 0.13,
-  },
+function demoTriplet(
+  id: string,
+  snapshotName: string,
+  testTitle: string,
+  label: string,
+  color: string,
+  diffPercent: number,
+): SnapshotTriplet {
+  return {
+    snapshotName,
+    testTitle,
+    actual: { id, src: thumbSvg(label, color) },
+    diffPercent,
+  };
+}
+
+const triplets: SnapshotTriplet[] = [
+  demoTriplet('demo-1', 'home/dashboard.png', 'home > dashboard renders for signed-in user', 'home/dashboard', '#1f1f24', 12.4),
+  demoTriplet('demo-2', 'auth/sign-in.png', 'auth > sign-in / form', 'auth/sign-in', '#0e1422', 5.2),
+  demoTriplet('demo-3', 'projects/empty-state.png', 'projects > empty state', 'projects/empty', '#0c0e12', 0.04),
+  demoTriplet('demo-4', 'runs/detail/header.png', 'runs > detail header shows branch + PR', 'runs/detail', '#16161a', 1.8),
+  demoTriplet('demo-5', 'runs/detail/footer.png', 'runs > detail / footer test list', 'runs/footer', '#1a1a1f', 0.13),
 ];
 
 export default function BulkApproveDemoPage() {
@@ -73,7 +55,7 @@ export default function BulkApproveDemoPage() {
           the error path too.
         </p>
       </header>
-      <BulkApprove runId="demo-run" pending={pending} />
+      <BulkApprove runId="demo-run" triplets={triplets} />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { TestStatusBadge } from '@/components/status-badge';
 import { type SnapshotTriplet } from '@/components/snapshot-diff';
 import { DiffGallery } from '@/components/diff-gallery';
 import { fillExpectedFromBaselines } from '@/lib/triplet-baseline';
+import { loadRunDiffs, runDiffsToTriplets } from '@/lib/run-diffs';
+import { ChevronLeft } from 'lucide-react';
 import { AttachmentViewer } from '@/components/attachment-viewer';
 import { BranchPr } from '@/components/branch-pr';
 import { PendingBaselineCard } from '@/components/pending-baseline-card';
@@ -67,6 +69,17 @@ export default async function TestPage({
   // is the real "before". Backfill so the diff viewer always has all three.
   const tripletsWithExpected = fillExpectedFromBaselines(triplets, baselines);
 
+  // Run-wide diff list so opening one diff lets you step back/forth across
+  // every failed test in this run — approve the whole run from one test's
+  // lightbox without bouncing back to the run page.
+  const navTriplets =
+    triplets.length > 0
+      ? runDiffsToTriplets(
+          await loadRunDiffs(runId, projectId),
+          (d) => `/runs/${runId}/tests/${d.testId}`,
+        )
+      : [];
+
   // Non-snapshot attachments (videos, traces, errors, plain screenshots).
   const otherAttachments = finalAttachments.filter((a) => !a.snapshotName);
 
@@ -85,9 +98,10 @@ export default async function TestPage({
       <div>
         <Link
           href={`/runs/${runId}`}
-          className="text-xs text-fg-subtle hover:text-fg-muted"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-panel px-3 py-1.5 text-sm text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
         >
-          ← back to run
+          <ChevronLeft className="h-4 w-4" />
+          back to run
         </Link>
         <div className="mt-2 flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -149,7 +163,7 @@ export default async function TestPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">
             Visual diffs
           </h2>
-          <DiffGallery triplets={tripletsWithExpected} />
+          <DiffGallery triplets={tripletsWithExpected} navTriplets={navTriplets} />
         </section>
       )}
 

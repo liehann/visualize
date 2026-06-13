@@ -16,7 +16,8 @@
     "db:studio": "prisma studio",
     "compose:dev": "docker compose --profile dev up -d",
     "compose:down": "docker compose --profile dev down",
-    "upload": "tsx scripts/upload-report.ts"
+    "upload": "tsx scripts/upload-report.ts",
+    "push:local": "node scripts/visualize-push-local.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

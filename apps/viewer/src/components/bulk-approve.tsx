@@ -30,23 +30,14 @@ function BulkDiffBadge({ percent }: { percent: number }) {
   );
 }
 
-export type PendingDiff = {
-  attachmentId: string;
-  snapshotName: string;
-  testTitle: string;
-  testId: string;
-  actualSrc: string;
-  expectedSrc?: string;
-  diffSrc?: string;
-  diffPercent?: number;
-};
-
 type Props = {
   runId: string;
-  pending: PendingDiff[];
+  // Every changed visual snapshot across the run, carrying its `approved`
+  // flag, test title and deep-link. Pending = not yet approved.
+  triplets: SnapshotTriplet[];
 };
 
-export function BulkApprove({ runId, pending }: Props) {
+export function BulkApprove({ runId, triplets }: Props) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<
     | { ok: number; failed: { name: string; error: string }[] }
@@ -55,29 +46,38 @@ export function BulkApprove({ runId, pending }: Props) {
   const [pendingFetch, start] = useTransition();
   const router = useRouter();
 
-  // Run-wide step-through review: every pending diff across every test in
-  // one keyboard-driven lightbox. ← → walks across tests, A approves and
-  // auto-advances. This is the fast triage loop.
+  // Run-wide step-through review: every diff across every test in one
+  // keyboard-driven lightbox. ← → walks across tests, A approves and
+  // auto-advances. Available even when nothing is pending, so you can always
+  // re-examine what changed.
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+  const approvedIdsRef = useRef(approvedIds);
+  approvedIdsRef.current = approvedIds;
   const touchedRef = useRef(false);
 
+  // Merge server `approved` with what's been approved live in this session.
   const reviewTriplets = useMemo<SnapshotTriplet[]>(
     () =>
-      pending.map((p) => ({
-        snapshotName: `${p.testTitle} — ${p.snapshotName}`,
-        actual: { id: p.attachmentId, src: p.actualSrc },
-        expected: p.expectedSrc
-          ? { src: p.expectedSrc, fromBaseline: true }
-          : undefined,
-        diff: p.diffSrc
-          ? { id: `${p.attachmentId}-diff`, src: p.diffSrc }
-          : undefined,
-        diffPercent: p.diffPercent,
-        approved: approvedIds.has(p.attachmentId),
+      triplets.map((t) => ({
+        ...t,
+        approved: t.approved || (t.actual ? approvedIds.has(t.actual.id) : false),
       })),
-    [pending, approvedIds],
+    [triplets, approvedIds],
   );
+
+  const pendingTriplets = useMemo(
+    () => reviewTriplets.filter((t) => !t.approved && t.actual),
+    [reviewTriplets],
+  );
+  const pendingCount = pendingTriplets.length;
+
+  const startReview = useCallback(() => {
+    setApprovedIds(new Set());
+    touchedRef.current = false;
+    const firstPending = reviewTriplets.findIndex((t) => !t.approved && t.actual);
+    setReviewIndex(firstPending >= 0 ? firstPending : 0);
+  }, [reviewTriplets]);
 
   const closeReview = useCallback(() => {
     setReviewIndex(null);
@@ -106,14 +106,23 @@ export function BulkApprove({ runId, pending }: Props) {
         return { ok: false, error: detail || `approve failed (${res.status})` };
       }
       touchedRef.current = true;
-      setApprovedIds((prev) => new Set(prev).add(id));
-      // Let the green "approved" land, then advance to the next change so a
-      // sweep is just: look, A, look, A. End of list closes + refreshes.
+      const nextApproved = new Set(approvedIdsRef.current).add(id);
+      approvedIdsRef.current = nextApproved;
+      setApprovedIds(nextApproved);
+      // Let the green "approved" land, then jump to the next change still
+      // needing review, so a sweep is just: look, A, look, A. When nothing
+      // is left, close + refresh — that's the "done" signal.
+      const stillPending = (tt: SnapshotTriplet | undefined) =>
+        !!tt?.actual && !tt.approved && !nextApproved.has(tt.actual.id);
       setTimeout(() => {
         setReviewIndex((cur) => {
           if (cur === null) return cur;
-          const next = cur + 1;
-          if (next < pending.length) return next;
+          for (let i = cur + 1; i < triplets.length; i++) {
+            if (stillPending(triplets[i])) return i;
+          }
+          for (let i = 0; i < cur; i++) {
+            if (stillPending(triplets[i])) return i;
+          }
           touchedRef.current = false;
           router.refresh();
           return null;
@@ -121,10 +130,10 @@ export function BulkApprove({ runId, pending }: Props) {
       }, 250);
       return { ok: true };
     },
-    [pending.length, router],
+    [triplets, router],
   );
 
-  if (pending.length === 0) return null;
+  if (triplets.length === 0) return null;
 
   const onConfirm = () => {
     setResults(null);
@@ -154,37 +163,62 @@ export function BulkApprove({ runId, pending }: Props) {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-warn/30 bg-warn/5 px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-medium text-fg">
-            <AlertTriangle className="h-4 w-4 text-warn" />
-            {pending.length} visual change{pending.length === 1 ? '' : 's'} pending review
+      {pendingCount > 0 ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn/5 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-fg">
+              <AlertTriangle className="h-4 w-4 text-warn" />
+              {pendingCount} golden{pendingCount === 1 ? '' : 's'} need{pendingCount === 1 ? 's' : ''} review
+            </div>
+            <div className="mt-0.5 text-xs text-fg-subtle">
+              Step through each one full-screen — <Kbd>←</Kbd> <Kbd>→</Kbd> to move,{' '}
+              <Kbd>A</Kbd> to approve and jump to the next. No going back and forth.
+            </div>
           </div>
-          <div className="mt-0.5 text-xs text-fg-subtle">
-            Step through every change across the run with the keyboard, or
-            approve them all in one shot.
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="default"
+              size="md"
+              onClick={startReview}
+              title="Step through every pending golden (← → to move, A to approve)"
+              className="font-medium"
+            >
+              <PlaySquare className="h-4 w-4" />
+              Review {pendingCount} golden{pendingCount === 1 ? '' : 's'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen(true)}
+              title="Approve all pending goldens at once, without reviewing"
+            >
+              approve all
+            </Button>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+      ) : (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-panel px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-medium text-fg">
+              <Check className="h-4 w-4 text-success" />
+              {triplets.length} visual change{triplets.length === 1 ? '' : 's'} — all approved
+            </div>
+            <div className="mt-0.5 text-xs text-fg-subtle">
+              Step back through every diff in this run any time.
+            </div>
+          </div>
           <Button
-            variant="default"
+            variant="secondary"
             size="sm"
-            onClick={() => {
-              setApprovedIds(new Set());
-              touchedRef.current = false;
-              setReviewIndex(0);
-            }}
-            title="Open the run-wide review lightbox (← → to step, A to approve)"
+            onClick={startReview}
+            title="Re-open the run-wide review lightbox (← → to step)"
+            className="shrink-0"
           >
             <PlaySquare className="h-3.5 w-3.5" />
-            review {pending.length}
-          </Button>
-          <Button variant="success" size="sm" onClick={() => setOpen(true)}>
-            <Check className="h-3.5 w-3.5" />
-            approve all
+            review {triplets.length} golden{triplets.length === 1 ? '' : 's'}
           </Button>
         </div>
-      </div>
+      )}
 
       {reviewIndex !== null && (
         <DiffLightbox
@@ -208,7 +242,7 @@ export function BulkApprove({ runId, pending }: Props) {
             <header className="flex items-center justify-between border-b border-border px-5 py-3">
               <div>
                 <h2 className="text-base font-semibold text-fg">
-                  Approve {pending.length} visual change{pending.length === 1 ? '' : 's'}
+                  Approve {pendingCount} visual change{pendingCount === 1 ? '' : 's'}
                 </h2>
                 <p className="mt-0.5 text-xs text-fg-subtle">
                   Each &ldquo;actual&rdquo; image becomes the new baseline. The next CI run
@@ -227,34 +261,36 @@ export function BulkApprove({ runId, pending }: Props) {
             </header>
 
             <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
-              {pending.map((p) => {
-                const failure = results?.failed.find((f) => f.name === p.snapshotName);
+              {pendingTriplets.map((p) => {
+                const name = p.snapshotName;
+                const failure = results?.failed.find((f) => f.name === name);
                 const succeeded =
-                  results !== null &&
-                  !results.failed.some((f) => f.name === p.snapshotName);
+                  results !== null && !results.failed.some((f) => f.name === name);
                 return (
                   <li
-                    key={p.attachmentId}
+                    key={p.actual?.id ?? name}
                     className="flex items-start gap-3 px-5 py-3 text-xs"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={p.actualSrc}
-                      alt={p.snapshotName}
+                      src={p.actual?.src}
+                      alt={name}
                       className="h-14 w-20 shrink-0 rounded border border-border object-cover"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-mono text-[12px] text-fg">
-                          {p.snapshotName}
+                          {name}
                         </span>
                         {p.diffPercent !== undefined && (
                           <BulkDiffBadge percent={p.diffPercent} />
                         )}
                       </div>
-                      <div className="mt-0.5 truncate text-fg-subtle">
-                        {p.testTitle}
-                      </div>
+                      {p.testTitle && (
+                        <div className="mt-0.5 truncate text-fg-subtle">
+                          {p.testTitle}
+                        </div>
+                      )}
                       {failure && (
                         <div className="mt-1 truncate text-danger">{failure.error}</div>
                       )}
@@ -277,7 +313,7 @@ export function BulkApprove({ runId, pending }: Props) {
               <div className="text-xs text-fg-subtle">
                 {results
                   ? `${results.ok} approved · ${results.failed.length} failed`
-                  : `${pending.length} ready`}
+                  : `${pendingCount} ready`}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -307,5 +343,13 @@ export function BulkApprove({ runId, pending }: Props) {
         </div>
       )}
     </>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded border border-border px-1 font-mono text-[9px] text-fg-muted">
+      {children}
+    </span>
   );
 }

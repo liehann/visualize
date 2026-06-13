@@ -9,6 +9,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import {
   Check,
   ChevronLeft,
@@ -39,13 +40,31 @@ export function DiffLightbox({
   onApprove,
 }: Props) {
   const triplet = triplets[index];
-  const [view, setView] = useState<LightboxView>(pickInitialView(triplet));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approved, setApproved] = useState(triplet?.approved ?? false);
 
+  // The view mode is remembered across diffs and across sessions (default:
+  // split/side). `preferredView` is what the user last picked; the effective
+  // `view` honors it whenever the current triplet can show it, otherwise it
+  // gracefully falls back without forgetting the preference.
+  const [preferredView, setPreferredView] = useState<LightboxView>(
+    () => readStoredView() ?? 'side',
+  );
+  const has = availableViews(triplet);
+  const view = has[preferredView] ? preferredView : fallbackView(triplet);
+
+  const approvedCount = triplets.reduce((n, t) => n + (t.approved ? 1 : 0), 0);
+
+  const hasRef = useRef(has);
+  hasRef.current = has;
+  const chooseView = useCallback((v: LightboxView) => {
+    if (!hasRef.current[v]) return; // ignore unavailable modes (e.g. no expected)
+    setPreferredView(v);
+    writeStoredView(v);
+  }, []);
+
   useEffect(() => {
-    setView(pickInitialView(triplet));
     setApproved(triplet?.approved ?? false);
     setError(null);
   }, [index, triplet]);
@@ -85,18 +104,18 @@ export function DiffLightbox({
         e.preventDefault();
         void handleApprove();
       } else if (e.key === '1') {
-        setView('side');
+        chooseView('side');
       } else if (e.key === '2') {
-        setView('slider');
+        chooseView('slider');
       } else if (e.key === '3') {
-        setView('difference');
+        chooseView('difference');
       } else if (e.key === '4') {
-        setView('diff');
+        chooseView('diff');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goPrev, goNext, onClose, handleApprove]);
+  }, [goPrev, goNext, onClose, handleApprove, chooseView]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -122,13 +141,34 @@ export function DiffLightbox({
               <LightboxDiffBadge percent={triplet.diffPercent} />
             )}
           </div>
-          {triplets.length > 1 && (
-            <div className="mt-0.5 text-[11px] text-fg-subtle">
-              {index + 1} of {triplets.length}
+          {(triplet.testTitle || triplets.length > 1) && (
+            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-fg-subtle">
+              {triplet.testTitle &&
+                (triplet.testHref ? (
+                  <Link
+                    href={triplet.testHref}
+                    className="truncate underline-offset-2 hover:text-fg-muted hover:underline"
+                    title="Open this test"
+                  >
+                    {triplet.testTitle}
+                  </Link>
+                ) : (
+                  <span className="truncate">{triplet.testTitle}</span>
+                ))}
+              {triplets.length > 1 && (
+                <span className="shrink-0">
+                  {index + 1} of {triplets.length}
+                </span>
+              )}
+              {triplets.length > 1 && approvedCount > 0 && (
+                <span className="shrink-0 text-success">
+                  · {approvedCount}/{triplets.length} approved
+                </span>
+              )}
             </div>
           )}
         </div>
-        <ViewSwitcher view={view} onChange={setView} triplet={triplet} />
+        <ViewSwitcher view={view} onChange={chooseView} triplet={triplet} />
         {approved ? (
           <Button variant="success" size="sm" disabled>
             <Check className="h-3.5 w-3.5" />
@@ -241,11 +281,44 @@ function LightboxDiffBadge({ percent }: { percent: number }) {
   );
 }
 
-function pickInitialView(triplet: SnapshotTriplet | undefined): LightboxView {
-  if (!triplet) return 'side';
-  if (triplet.expected && triplet.actual) return 'slider';
-  if (triplet.diff) return 'diff';
-  return 'side';
+const VIEW_STORAGE_KEY = 'visualize:lightbox-view';
+const ALL_VIEWS: LightboxView[] = ['side', 'slider', 'difference', 'diff'];
+
+function readStoredView(): LightboxView | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    return v && (ALL_VIEWS as string[]).includes(v) ? (v as LightboxView) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredView(v: LightboxView) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, v);
+  } catch {
+    // private mode / storage disabled — remembering is best-effort.
+  }
+}
+
+function availableViews(
+  triplet: SnapshotTriplet | undefined,
+): Record<LightboxView, boolean> {
+  return {
+    side: !!(triplet?.expected || triplet?.actual || triplet?.diff),
+    slider: !!(triplet?.expected && triplet?.actual),
+    difference: !!(triplet?.expected && triplet?.actual),
+    diff: !!triplet?.diff,
+  };
+}
+
+// Split (side) is the canonical default; for triplets that can't show the
+// remembered mode, fall back to the first mode they support.
+function fallbackView(triplet: SnapshotTriplet | undefined): LightboxView {
+  const has = availableViews(triplet);
+  return ALL_VIEWS.find((v) => has[v]) ?? 'side';
 }
 
 function ViewSwitcher({
@@ -257,12 +330,7 @@ function ViewSwitcher({
   onChange: (v: LightboxView) => void;
   triplet: SnapshotTriplet;
 }) {
-  const has = {
-    side: !!(triplet.expected || triplet.actual || triplet.diff),
-    slider: !!(triplet.expected && triplet.actual),
-    difference: !!(triplet.expected && triplet.actual),
-    diff: !!triplet.diff,
-  };
+  const has = availableViews(triplet);
   const items: { v: LightboxView; label: string; key: string; title: string }[] = [
     { v: 'side', label: 'side', key: '1', title: 'Expected, actual and diff side by side' },
     {

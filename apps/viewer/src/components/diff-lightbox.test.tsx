@@ -51,6 +51,7 @@ function bodyText(): string {
 describe('<DiffLightbox>', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the snapshot name + diff% badge in the header', () => {
@@ -136,14 +137,34 @@ describe('<DiffLightbox>', () => {
     });
   });
 
-  it('keyboard 1/3/4 switches the view (slider→side / difference / diff)', () => {
+  it('defaults to split/side view (expected, actual and diff all visible)', () => {
     renderLightbox();
-    // Default for full triplet is "slider" view; pressing "1" goes to side.
-    fireEvent.keyDown(window, { key: '1' });
-    // In side mode the labels expected/actual/diff render as section
-    // headers — assert they're all in the DOM at once.
+    // Side mode renders all three labels as section headers at once; slider
+    // and diff modes do not. No key press — this is the default.
     expect(bodyText()).toContain('expected');
     expect(bodyText()).toContain('actual');
     expect(bodyText()).toContain('diff');
+  });
+
+  it('remembers the last-picked view across mounts (localStorage)', () => {
+    const first = renderLightbox();
+    // Switch to slider; the slider stage has no "diff" section label.
+    fireEvent.keyDown(window, { key: '2' });
+    expect(window.localStorage.getItem('visualize:lightbox-view')).toBe('slider');
+    first.unmount();
+
+    // A fresh mount should open in the remembered slider view — only the
+    // slider stage renders the drag handle glyph.
+    renderLightbox();
+    expect(bodyText()).toContain('⇔');
+  });
+
+  it('falls back to an available view when the remembered one is unsupported', () => {
+    window.localStorage.setItem('visualize:lightbox-view', 'slider');
+    // A diff-only triplet can't show slider → falls back without forgetting.
+    renderLightbox({ triplets: [{ snapshotName: 'x', diff: { id: 'd', src: '/d.png' } }] });
+    expect(bodyText()).toContain('diff');
+    // The remembered preference is untouched for triplets that *can* show it.
+    expect(window.localStorage.getItem('visualize:lightbox-view')).toBe('slider');
   });
 });

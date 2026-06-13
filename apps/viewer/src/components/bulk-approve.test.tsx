@@ -1,26 +1,25 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { BulkApprove, type PendingDiff } from './bulk-approve.js';
+import { BulkApprove } from './bulk-approve.js';
+import type { SnapshotTriplet } from './snapshot-diff.js';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-const fixturePending: PendingDiff[] = [
+const fixtureTriplets: SnapshotTriplet[] = [
   {
-    attachmentId: 'a1',
     snapshotName: 'home/dashboard.png',
     testTitle: 'home > renders',
     testId: 'tc1',
-    actualSrc: '/files/a1.png',
+    actual: { id: 'a1', src: '/files/a1.png' },
     diffPercent: 12.4,
   },
   {
-    attachmentId: 'a2',
     snapshotName: 'auth/sign-in.png',
     testTitle: 'auth > sign-in',
     testId: 'tc2',
-    actualSrc: '/files/a2.png',
+    actual: { id: 'a2', src: '/files/a2.png' },
     diffPercent: 0.05,
   },
 ];
@@ -59,17 +58,17 @@ describe('<BulkApprove>', () => {
   });
 
   it('renders nothing when there are no pending diffs', () => {
-    const { container } = render(<BulkApprove runId="r1" pending={[]} />);
+    const { container } = render(<BulkApprove runId="r1" triplets={[]} />);
     expect(container.textContent).toBe('');
   });
 
   it('shows the pending banner with the diff count', () => {
-    render(<BulkApprove runId="r1" pending={fixturePending} />);
-    expect(bodyContains('2 visual changes pending review')).toBe(true);
+    render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
+    expect(bodyContains('2 goldens need review')).toBe(true);
   });
 
   it('opening the sheet lists every pending diff with its impact badge', async () => {
-    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+    const utils = render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
     fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
 
     await waitForBody('Approve 2 visual changes');
@@ -93,7 +92,7 @@ describe('<BulkApprove>', () => {
         { status: 200 },
       ),
     );
-    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+    const utils = render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
 
     fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');
@@ -125,7 +124,7 @@ describe('<BulkApprove>', () => {
         { status: 200 },
       ),
     );
-    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+    const utils = render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
 
     fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');
@@ -143,20 +142,22 @@ describe('<BulkApprove>', () => {
     const fetchSpy = vi
       .spyOn(global, 'fetch')
       .mockResolvedValue(new Response('', { status: 200 }));
-    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+    const utils = render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
 
-    fireEvent.click(findButton(utils.container, /^\s*review 2\s*$/i));
+    fireEvent.click(findButton(utils.container, /review 2 goldens/i));
 
-    // The lightbox portals to document.body and shows the first change,
-    // prefixed with its test so you know where you are in the run.
-    await waitForBody('home > renders — home/dashboard.png');
+    // The lightbox portals to document.body and shows the first change, with
+    // its originating test named in the header so you know where you are.
+    await waitForBody('home/dashboard.png');
+    expect(bodyContains('home > renders')).toBe(true);
     expect(screen.getByRole('dialog', { name: /snapshot diff/i })).toBeTruthy();
 
     // ← → walks across tests without going back to the run list.
     fireEvent.keyDown(window, { key: 'ArrowRight' });
-    await waitForBody('auth > sign-in — auth/sign-in.png');
+    await waitForBody('auth/sign-in.png');
+    expect(bodyContains('auth > sign-in')).toBe(true);
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
-    await waitForBody('home > renders — home/dashboard.png');
+    await waitForBody('home/dashboard.png');
 
     // A approves the displayed change against its actual attachment.
     fireEvent.keyDown(window, { key: 'a' });
@@ -174,7 +175,7 @@ describe('<BulkApprove>', () => {
     // `(request)` isn't in `pending`, but the count is the visible
     // signal.
     vi.spyOn(global, 'fetch').mockResolvedValue(new Response('', { status: 500 }));
-    const utils = render(<BulkApprove runId="r1" pending={fixturePending} />);
+    const utils = render(<BulkApprove runId="r1" triplets={fixtureTriplets} />);
 
     fireEvent.click(findButton(utils.container, /^\s*approve all\s*$/i));
     await waitForBody('Approve 2 visual changes');

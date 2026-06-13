@@ -291,6 +291,26 @@ pnpm --filter @visualize/mcp dev   # http://localhost:5000
 pnpm upload --report ./playwright-report --project demo --branch main
 ```
 
+> **Gotcha — `DATA_DIR` must be one shared absolute path in local dev.**
+> `.env.example` ships `DATA_DIR=./data` (relative). That's fine in prod
+> (the compose mounts an absolute volume) but in local dev it resolves
+> against each process's **cwd**, and `pnpm --filter` runs each service
+> from its own package dir — so `dev:ingest` writes `apps/ingest/data`,
+> `dev:viewer` reads `apps/viewer/data`, and `scripts/seed.ts` (run from
+> the repo root) writes `./data`. Three different folders → the viewer
+> serves **zero images** even though the upload "succeeded". When you need
+> ingest + viewer + seed to share files locally, export one absolute path
+> for all of them before launching, e.g.:
+>
+> ```bash
+> export DATA_DIR="$PWD/data"   # from the repo root, in each terminal
+> # also point DATABASE_URL at the dev Postgres host:port you actually use
+> ```
+>
+> A real fix would be to resolve `DATA_DIR` against the repo root inside
+> `data_dir_check`/`storage`, but the absolute-path export keeps dev simple
+> without changing prod behavior.
+
 ## Build state
 
 > Update this section every session. The customer relies on it to know
@@ -505,6 +525,82 @@ but never used for display. Four fixes, all stemming from that root:
   (Esc to close, click to toggle actual-size).
 
 Repo-wide typecheck clean, 54 viewer tests (+ core/ingest/mcp) green,
+viewer prod build green.
+
+### Done (session 5, 2026-06-11) — review ergonomics + local pre-approval
+
+Three stakeholder asks: default the diff viewer to split, navigate diffs
+across the whole run, and approve goldens **before** CI runs.
+
+- **Remembered view + split default** (`diff-lightbox.tsx`). The lightbox
+  now opens in **split (side)** view by default and remembers the
+  last-picked mode in `localStorage` (`visualize:lightbox-view`) across
+  diffs and sessions. A remembered mode the current triplet can't show
+  (e.g. slider with no `expected`) falls back gracefully **without
+  forgetting** the preference. Keyboard `1-4` are guarded to available
+  modes. New unit tests cover default + persistence + fallback.
+- **Cross-test diff navigation** (`lib/run-diffs.ts`,
+  `diff-gallery.tsx`, `diff-lightbox.tsx`). New `loadRunDiffs()` gathers
+  every changed snapshot across a run (failed-first order, golden
+  backfilled as `expected`, `approved` flag from the Baseline table) —
+  one ordered list shared by the run page and each test page. Opening a
+  diff from a test now steps `← →` across **every failed test in the
+  run**, not just that test's snapshots. The lightbox header names the
+  originating test and deep-links to it (`SnapshotTriplet` gained
+  `testId`/`testTitle`/`testHref`).
+- **Always-available run review + remembered approvals**
+  (`bulk-approve.tsx`). `BulkApprove` now takes the full run-wide
+  triplet list. When changes are pending it shows the warn banner with
+  **review N** / **approve all**; when everything's approved it shows a
+  muted **review N** bar so you can re-step the run any time. Approvals
+  persist (Baseline rows) and render as `approved` on reload. The old
+  page-local `loadPendingDiffs` was deleted in favor of the shared lib;
+  the demo page + tests were migrated to the triplet API.
+- **Local pre-approval: `pnpm push:local`**
+  (`scripts/visualize-push-local.mjs`). Portable, zero-dependency
+  (Node 20 built-ins + `git`/`zip`; bundling inlined — no bash). Bundles
+  the local `playwright-report/` + `test-results/`, auto-detects
+  branch/commit from git, and uploads as a **branch run**
+  (`ciProvider: local`) to the hosted ingest. Prints a deep-link to
+  review + approve in the real viewer. Config from flags or env
+  (`VISUALIZE_INGEST_URL`/`INGEST_PUBLIC_URL`, `VISUALIZE_TOKEN`/
+  `API_SECRET`, `VISUALIZE_PROJECT`, `VIEWER_URL`). Approving there
+  writes the **hosted baseline**; the next CI run's `fetch-baselines`
+  pulls it so CI passes first try — no waiting for CI to fail, no
+  full rerun. (Per stakeholder pick: push-to-hosted + hosted-baseline,
+  not on-disk goldens.)
+- **Consumer recipe shipped to the `phloots-visualize` skill** (§8). The
+  same `.mjs` is vendored into consumer repos (`curl` one-liner) +
+  `pnpm push:local`. Critical caveat documented: Playwright keys goldens
+  by `{platform}`, so devs must generate the local run **in the
+  CI-matching Linux container** (`mcr.microsoft.com/playwright`) or the
+  approved `-darwin` golden won't match CI's `-linux`. Fixed a stale
+  troubleshooting bullet there that still told devs to
+  `--update-snapshots`.
+
+### Done (session 6, 2026-06-13) — review-flow UX + local-goldens distribution
+
+- **Step-through review is now the primary, obvious path.** Run-page
+  banner reads "N goldens need review" with a prominent "Review N
+  goldens" button (+ keyboard hint); the lightbox is a real **queue** —
+  `A` approves and auto-advances to the next *unapproved* golden,
+  skipping done ones, and closes when none remain. Header shows
+  `X of N · M approved`.
+- **"N goldens need review" shows for any pending golden, incl. a single
+  one and first-time writes.** `loadRunDiffs` no longer filters to
+  actuals-with-a-diff; it returns every non-approved `actual` (changed
+  diff *or* first-time write), so the banner is consistent across runs
+  (a run of only first-time goldens — e.g. a `push:local` dogfood run —
+  now surfaces the review UI instead of nothing).
+- **Navigation ergonomics.** "back to run" / "all runs" are bordered
+  button targets, not tiny text. The "Review N goldens" launcher now also
+  renders on **every test page** (test page loads the run-wide list
+  unconditionally), so re-approving never requires bouncing back to the
+  run.
+- **Dev `DATA_DIR` gotcha documented** (relative `./data` resolves per
+  cwd → invisible images). See the Local dev callout above.
+
+Repo-wide typecheck clean, 56 viewer tests (+ core/ingest/mcp) green,
 viewer prod build green.
 
 ### What still wants doing (Claude prioritizes; stakeholder may redirect)

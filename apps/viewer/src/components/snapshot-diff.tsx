@@ -16,6 +16,11 @@ export type SnapshotTriplet = {
   diffPercent?: number;
   diffPixels?: number;
   approved?: boolean;
+  // Optional run context — set when a triplet is shown inside a run-wide
+  // lightbox so the header can name the originating test and link to it.
+  testId?: string;
+  testTitle?: string;
+  testHref?: string;
 };
 
 type Props = {

@@ -91,7 +91,7 @@ test.describe.serial('PR feedback loop — real run, real lightbox, real compare
     await expect(page.getByText('feat/redesign-sign-in')).toBeVisible();
     await expect(page.getByText('PR #142')).toBeVisible();
     await expect(
-      page.getByText(/1 visual change pending review/i),
+      page.getByText(/1 golden needs review/i),
     ).toBeVisible();
     await page.waitForTimeout(400);
 
@@ -110,11 +110,12 @@ test.describe.serial('PR feedback loop — real run, real lightbox, real compare
     await expect(page.locator('img[alt="diff"]').first()).toBeVisible();
     await page.waitForTimeout(300);
 
-    // 3. Open the lightbox by clicking the "actual" thumbnail. Default view
-    //    for a triplet with both expected + actual is the slider.
+    // 3. Open the lightbox by clicking the "actual" thumbnail. It opens in
+    //    split view by default; press 2 to switch to the slider.
     await page.locator('img[alt="actual"]').first().click();
     const dialog = page.getByRole('dialog', { name: 'Snapshot diff' });
     await expect(dialog).toBeVisible();
+    await page.keyboard.press('2');
     await page.waitForTimeout(400);
 
     // 4. Drag the slider divider to ~30%.
@@ -165,12 +166,12 @@ test.describe.serial('PR feedback loop — real run, real lightbox, real compare
     // 7. Back to the run page → open the bulk-approve sheet.
     await page.getByRole('link', { name: /back to run/i }).click();
     await expect(
-      page.getByText(/1 visual change pending review/i),
+      page.getByText(/1 golden needs review/i),
     ).toBeVisible();
     // The banner now also offers run-wide "review N" step-through; the
     // bulk path is the unqualified "approve all" (count moved off it).
     await expect(
-      page.getByRole('button', { name: /^review 1$/i }),
+      page.getByRole('button', { name: /review 1 golden/i }),
     ).toBeVisible();
     await page.getByRole('button', { name: /^approve all$/i }).click();
     const sheet = page.getByRole('heading', {

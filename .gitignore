@@ -13,6 +13,11 @@ build/
 /apps/viewer/playwright-report/
 /apps/viewer/test-results/
 
+# Local DATA_DIR extraction dirs (relative ./data resolves per-process cwd
+# in dev — see CLAUDE.md). Never commit ingested/seeded run bytes.
+/apps/ingest/data/
+/apps/viewer/data/
+
 # Local Claude Code agent state.
 /.claude/
 
